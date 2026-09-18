@@ -1,0 +1,48 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('client/**/*.gradle*', 'client/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+        working-directory: client
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+        working-directory: client
+
+      - name: Rename APK
+        run: |
+          mv client/app/build/outputs/apk/debug/app-debug.apk client/app/build/outputs/apk/debug/smart-wall-socket-${{ github.ref_name }}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Smart Wall Socket ${{ github.ref_name }}
+          generate_release_notes: true
+          files: client/app/build/outputs/apk/debug/smart-wall-socket-${{ github.ref_name }}.apk

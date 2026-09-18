@@ -18,6 +18,26 @@ import nibm.iot.socketman.viewmodel.EnergyData
 import nibm.iot.socketman.viewmodel.SmartDevice
 import nibm.iot.socketman.viewmodel.SocketViewModel
 
+fun calculateCost(units: Double): Double {
+    var cost = 0.0
+    var remainingUnits = units
+
+    if (remainingUnits > 0) {
+        val tier1 = minOf(remainingUnits, 60.0)
+        cost += tier1 * 14.0
+        remainingUnits -= tier1
+    }
+    if (remainingUnits > 0) {
+        val tier2 = minOf(remainingUnits, 30.0)
+        cost += tier2 * 20.0
+        remainingUnits -= tier2
+    }
+    if (remainingUnits > 0) {
+        cost += remainingUnits * 28.0
+    }
+    return cost
+}
+
 @Composable
 fun MainScreen(viewModel: SocketViewModel, modifier: Modifier = Modifier) {
     val state = viewModel.state
@@ -263,6 +283,36 @@ fun MonitoringScreen(
                 )
                 Text(
                     text = "${"%.5f".format(totalUnits)} Units",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Estimated Cost
+        val estimatedCost = calculateCost(totalUnits)
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Estimated Cost",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Text(
+                    text = "LKR ${"%.2f".format(estimatedCost)}",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
