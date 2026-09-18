@@ -6,22 +6,21 @@
 #include "EmonLib.h"
 
 // ─── Fixed MAC Address ───────────────────────────────────────────────
-const uint8_t FIXED_MAC[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x01 };
+const uint8_t FIXED_MAC[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x01};
 
 // ─── WiFi Credentials ───────────────────────────────────────────────
-const char* WIFI_SSID = "ESP GATE";
-const char* WIFI_PASS = "123123123";
-
+const char *WIFI_SSID = "ESP GATE";
+const char *WIFI_PASS = "123123123";
 
 // ─── Energy Monitor ─────────────────────────────────────────────────
 EnergyMonitor emon1;
-const double FIXED_VOLTAGE = 230.0;  // Sri Lanka mains (prototype only)
+const double FIXED_VOLTAGE = 230.0; // Sri Lanka mains (prototype only)
 
 // ─── Web Server on port 80 ──────────────────────────────────────────
 ESP8266WebServer server(80);
 
 // ─── Latest energy readings (updated in loop) ───────────────────────
-double lastIrms    = 0.0;
+double lastIrms = 0.0;
 double lastWattage = 0.0;
 
 // ─── Forward declarations ───────────────────────────────────────────
@@ -33,13 +32,14 @@ void handleNotFound();
 // =====================================================================
 //  SETUP
 // =====================================================================
-void setup() {
+void setup()
+{
   Serial.begin(115200);
-  delay(100);  // brief settle time
+  delay(100); // brief settle time
   Serial.println("\nStarting Smart Wall Socket...");
 
   // --- Apply fixed MAC address ---
-  wifi_set_macaddr(STATION_IF, const_cast<uint8_t*>(FIXED_MAC));
+  wifi_set_macaddr(STATION_IF, const_cast<uint8_t *>(FIXED_MAC));
   Serial.printf("MAC address set to: %02X:%02X:%02X:%02X:%02X:%02X\n",
                 FIXED_MAC[0], FIXED_MAC[1], FIXED_MAC[2],
                 FIXED_MAC[3], FIXED_MAC[4], FIXED_MAC[5]);
@@ -49,7 +49,8 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   Serial.printf("Connecting to %s", WIFI_SSID);
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
     Serial.print(".");
   }
@@ -58,7 +59,8 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // --- Start mDNS (smartsocket.local) ---
-  if (MDNS.begin("smartsocket")) {
+  if (MDNS.begin("smartsocket"))
+  {
     MDNS.addService("http", "tcp", 80);
     Serial.println("mDNS started: smartsocket.local");
   }
@@ -80,7 +82,8 @@ void setup() {
 // =====================================================================
 //  LOOP
 // =====================================================================
-void loop() {
+void loop()
+{
   server.handleClient();
   MDNS.update();
 
@@ -95,7 +98,7 @@ void loop() {
   double estimatedWattage = Irms * FIXED_VOLTAGE;
 
   // Store for API access
-  lastIrms    = Irms;
+  lastIrms = Irms;
   lastWattage = estimatedWattage;
 
   // Logging output
@@ -114,21 +117,23 @@ void loop() {
 // =====================================================================
 //  GET /api/heartbeat
 // =====================================================================
-void handleHeartbeat() {
+void handleHeartbeat()
+{
   server.send(200, "application/json", "{\"ack\":true}");
 }
 
 // =====================================================================
 //  GET /api/wifi/status
 // =====================================================================
-void handleWifiStatus() {
+void handleWifiStatus()
+{
   JsonDocument doc;
 
   doc["connected"] = (WiFi.status() == WL_CONNECTED);
-  doc["ssid"]      = WiFi.SSID();
-  doc["ip"]        = WiFi.localIP().toString();
-  doc["mac"]       = WiFi.macAddress();
-  doc["rssi"]      = WiFi.RSSI();
+  doc["ssid"] = WiFi.SSID();
+  doc["ip"] = WiFi.localIP().toString();
+  doc["mac"] = WiFi.macAddress();
+  doc["rssi"] = WiFi.RSSI();
 
   String output;
   serializeJson(doc, output);
@@ -138,11 +143,12 @@ void handleWifiStatus() {
 // =====================================================================
 //  GET /api/energy
 // =====================================================================
-void handleEnergy() {
+void handleEnergy()
+{
   JsonDocument doc;
 
   doc["current_A"] = lastIrms;
-  doc["power_W"]   = lastWattage;
+  doc["power_W"] = lastWattage;
   doc["voltage_V"] = FIXED_VOLTAGE;
 
   String output;
@@ -153,6 +159,7 @@ void handleEnergy() {
 // =====================================================================
 //  404 handler
 // =====================================================================
-void handleNotFound() {
+void handleNotFound()
+{
   server.send(404, "application/json", "{\"error\":\"Not found\"}");
 }
