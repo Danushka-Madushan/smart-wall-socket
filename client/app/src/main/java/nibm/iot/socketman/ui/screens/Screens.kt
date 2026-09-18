@@ -19,22 +19,41 @@ import nibm.iot.socketman.viewmodel.SmartDevice
 import nibm.iot.socketman.viewmodel.SocketViewModel
 
 fun calculateCost(units: Double): Double {
+    // Handle 180 units or above
+    if (units >= 180.0) {
+        return (180.0 * 32.50) + ((units - 180.0) * 100.0)
+    }
+
+    // Handle under 180 units with tiered logic
     var cost = 0.0
     var remainingUnits = units
 
+    // First 60 units
     if (remainingUnits > 0) {
         val tier1 = minOf(remainingUnits, 60.0)
         cost += tier1 * 14.0
         remainingUnits -= tier1
     }
+    
+    // Next 30 units (61-90)
     if (remainingUnits > 0) {
         val tier2 = minOf(remainingUnits, 30.0)
         cost += tier2 * 20.0
         remainingUnits -= tier2
     }
+    
+    // Next 30 units (91-120)
     if (remainingUnits > 0) {
-        cost += remainingUnits * 28.0
+        val tier3 = minOf(remainingUnits, 30.0)
+        cost += tier3 * 28.0
+        remainingUnits -= tier3
     }
+    
+    // Remaining units up to 180 (121-179)
+    if (remainingUnits > 0) {
+        cost += remainingUnits * 44.0
+    }
+    
     return cost
 }
 
