@@ -226,10 +226,10 @@ Detailed project documentation is available in the [`docs/`](docs/) directory:
 
 ---
 
-## 🛠️ Circuit Design
+## 🛠️ System Design
 
 <p align="center">
-  <img src="docs/circuit_image.svg" alt="Circuit Design" width="700" />
+  <img src="docs/system_design.svg" alt="System Design" width="700" />
 </p>
 
 ---
