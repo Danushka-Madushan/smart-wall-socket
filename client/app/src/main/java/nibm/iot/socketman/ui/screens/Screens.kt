@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import nibm.iot.socketman.viewmodel.AppState
 import nibm.iot.socketman.viewmodel.EnergyData
+import nibm.iot.socketman.viewmodel.SmartDevice
 import nibm.iot.socketman.viewmodel.SocketViewModel
 
 @Composable
@@ -28,8 +29,8 @@ fun MainScreen(viewModel: SocketViewModel, modifier: Modifier = Modifier) {
                 isScanning = viewModel.isScanning,
                 networks = viewModel.scannedNetworks,
                 isConnecting = state is AppState.Connecting,
-                onScan = { viewModel.startScan() },
-                onConnect = { deviceId -> viewModel.connect(context, deviceId) },
+                onScan = { viewModel.startScan(context) },
+                onConnect = { deviceIp -> viewModel.connect(context, deviceIp) },
                 modifier = modifier
             )
         }
@@ -48,7 +49,7 @@ fun MainScreen(viewModel: SocketViewModel, modifier: Modifier = Modifier) {
 @Composable
 fun ConnectionScreen(
     isScanning: Boolean,
-    networks: List<String>,
+    networks: List<SmartDevice>,
     isConnecting: Boolean,
     onScan: () -> Unit,
     onConnect: (String) -> Unit,
@@ -112,9 +113,9 @@ fun ConnectionScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(networks) { deviceId ->
+                items(networks) { device ->
                     Surface(
-                        onClick = { onConnect(deviceId) },
+                        onClick = { onConnect(device.ip) },
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -126,12 +127,19 @@ fun ConnectionScreen(
                         ) {
                             Text("🔌", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = deviceId,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            Column {
+                                Text(
+                                    text = device.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = device.ip,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

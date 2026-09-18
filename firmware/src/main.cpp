@@ -46,6 +46,7 @@ void setup()
 
   // --- Connect to WiFi (DHCP) ---
   WiFi.mode(WIFI_STA);
+  WiFi.hostname("SmartSocket-ESP");
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   Serial.printf("Connecting to %s", WIFI_SSID);

@@ -1,6 +1,8 @@
 package nibm.iot.socketman.viewmodel
 
 import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -31,6 +33,8 @@ data class EnergyData(
     val voltageV: Float = 0f,
 )
 
+data class SmartDevice(val name: String, val ip: String)
+
 // --- ViewModel ---
 class SocketViewModel : ViewModel() {
     var state by mutableStateOf<AppState>(AppState.Connecting)
@@ -42,7 +46,7 @@ class SocketViewModel : ViewModel() {
     var totalUnits by mutableDoubleStateOf(0.0) // 1 unit = 1 kWh
         private set
 
-    var scannedNetworks by mutableStateOf<List<String>>(emptyList())
+    var scannedNetworks by mutableStateOf<List<SmartDevice>>(emptyList())
         private set
 
     var isScanning by mutableStateOf(false)
@@ -50,14 +54,16 @@ class SocketViewModel : ViewModel() {
 
     private var pollingJob: Job? = null
     
-    private val socketIp = "192.168.4.1"
+    private var currentSocketIp = "192.168.4.1"
+    private var nsdManager: NsdManager? = null
+    private var discoveryListener: NsdManager.DiscoveryListener? = null
 
-    fun initCheck() {
+    fun initCheck(context: Context) {
         if (state is AppState.Connected) return
         state = AppState.Connecting
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("http://$socketIp/api/wifi/status")
+                val url = URL("http://$currentSocketIp/api/wifi/status")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 2000
                 conn.readTimeout = 2000
@@ -65,7 +71,7 @@ class SocketViewModel : ViewModel() {
 
                 val json = JSONObject(response)
                 val ssid = json.optString("ssid", "SmartSocket")
-                val ip = json.optString("ip", socketIp)
+                val ip = json.optString("ip", currentSocketIp)
                 val rssi = json.optInt("rssi", 1)
                 val mac = json.optString("mac", json.optString("mc", "Unknown"))
 
@@ -76,47 +82,103 @@ class SocketViewModel : ViewModel() {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     state = AppState.Disconnected
-                    startScan()
+                    startScan(context)
                 }
             }
         }
     }
 
-    fun startScan() {
+    fun startScan(context: Context) {
         if (isScanning) return
         isScanning = true
         scannedNetworks = emptyList()
+
+        // 1. Fallback: Always blindly ping the default AP IP just in case mDNS fails
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("http://$socketIp/api/heartbeat")
+                val url = URL("http://192.168.4.1/api/heartbeat")
                 val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
+                conn.connectTimeout = 2000
+                conn.readTimeout = 2000
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
                 
                 val json = JSONObject(response)
                 if (json.optBoolean("ack", false)) {
                     withContext(Dispatchers.Main) {
-                        scannedNetworks = listOf("SmartSocket ($socketIp)")
+                        val fallbackDevice = SmartDevice("SmartSocket (Hotspot)", "192.168.4.1")
+                        if (scannedNetworks.none { it.ip == fallbackDevice.ip }) {
+                            scannedNetworks = scannedNetworks + fallbackDevice
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                // Heartbeat failed, no device found at this IP
-            } finally {
-                withContext(Dispatchers.Main) {
-                    isScanning = false
+            } catch (ignored: Exception) {}
+        }
+
+        // 2. mDNS Service Discovery
+        nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+        discoveryListener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(regType: String) {}
+
+            override fun onServiceFound(service: NsdServiceInfo) {
+                // The device advertises "smartsocket"
+                if (service.serviceName.contains("smartsocket", ignoreCase = true)) {
+                    nsdManager?.resolveService(service, object : NsdManager.ResolveListener {
+                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+
+                        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                            val ip = serviceInfo.host?.hostAddress ?: return
+                            val name = serviceInfo.serviceName
+                            val device = SmartDevice(name, ip)
+                            
+                            viewModelScope.launch(Dispatchers.Main) {
+                                if (scannedNetworks.none { it.ip == ip }) {
+                                    scannedNetworks = scannedNetworks + device
+                                }
+                            }
+                        }
+                    })
                 }
             }
+
+            override fun onServiceLost(service: NsdServiceInfo) {}
+            override fun onDiscoveryStopped(serviceType: String) {}
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                try { nsdManager?.stopServiceDiscovery(this) } catch (ignored: Exception) {}
+            }
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+        }
+
+        try {
+            nsdManager?.discoverServices("_http._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+        } catch (e: Exception) {
+            isScanning = false
+            return
+        }
+
+        // Stop scanning after 5 seconds to prevent battery drain
+        viewModelScope.launch {
+            delay(5000)
+            stopScan()
         }
     }
 
-    fun connect(context: Context, deviceId: String) {
+    private fun stopScan() {
+        if (!isScanning) return
+        try {
+            discoveryListener?.let { nsdManager?.stopServiceDiscovery(it) }
+        } catch (ignored: Exception) {}
+        discoveryListener = null
+        isScanning = false
+    }
+
+    fun connect(context: Context, deviceIp: String) {
         if (state is AppState.Connecting || state is AppState.Connected) return
         state = AppState.Connecting
+        currentSocketIp = deviceIp
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("http://$socketIp/api/wifi/status")
+                val url = URL("http://$currentSocketIp/api/wifi/status")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
@@ -124,7 +186,7 @@ class SocketViewModel : ViewModel() {
 
                 val json = JSONObject(response)
                 val ssid = json.optString("ssid", "SmartSocket")
-                val ip = json.optString("ip", socketIp)
+                val ip = json.optString("ip", currentSocketIp)
                 val rssi = json.optInt("rssi", 1)
                 val mac = json.optString("mac", json.optString("mc", "Unknown"))
 
@@ -146,7 +208,7 @@ class SocketViewModel : ViewModel() {
             var errorCount = 0
             while (isActive && (state is AppState.Connected)) {
                 try {
-                    val url = URL("http://$socketIp/api/energy")
+                    val url = URL("http://$currentSocketIp/api/energy")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.connectTimeout = 2000
                     conn.readTimeout = 2000
@@ -181,9 +243,16 @@ class SocketViewModel : ViewModel() {
         pollingJob?.cancel()
         state = AppState.Disconnected
         scannedNetworks = emptyList()
+        stopScan()
 
         reason?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopScan()
+        pollingJob?.cancel()
     }
 }
