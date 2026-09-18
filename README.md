@@ -5,13 +5,13 @@
 <h1 align="center">Smart Wall Socket</h1>
 
 <p align="center">
-  <b>Real-time energy monitoring for your home — powered by ESP8266 & Android</b>
+  <b>Real-time energy monitoring for your home - powered by ESP32 & Android</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/Danushka-Madushan/smart-wall-socket/releases"><img src="https://img.shields.io/github/v/release/Danushka-Madushan/smart-wall-socket?style=flat-square&color=0CD981" alt="Release" /></a>
   <a href="https://github.com/Danushka-Madushan/smart-wall-socket/actions"><img src="https://img.shields.io/github/actions/workflow/status/Danushka-Madushan/smart-wall-socket/build-apk.yml?style=flat-square&label=build" alt="Build" /></a>
-  <img src="https://img.shields.io/badge/platform-ESP8266%20%7C%20Android-blue?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/platform-ESP32%20%7C%20Android-blue?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
 </p>
 
@@ -19,7 +19,7 @@
 
 ## 📖 Overview
 
-**Smart Wall Socket** is an IoT-based energy monitoring system that transforms a standard wall socket into an intelligent power outlet. It measures real-time current draw using a **CT sensor (SCT-013)** connected to an **ESP8266** microcontroller and streams the data over Wi-Fi to a companion **Android app (SocketMan)** built with Jetpack Compose.
+**Smart Wall Socket** is an IoT-based energy monitoring system that transforms a standard wall socket into an intelligent power outlet. It measures real-time current draw using a **CT sensor (SCT-013)** connected to an **ESP32** microcontroller and streams the data over Wi-Fi to a companion **Android app (SocketMan)** built with Jetpack Compose.
 
 The system enables users to:
 
@@ -41,10 +41,10 @@ The system consists of two main components:
 
 | Component    | Technology                        | Description                                |
 | ------------ | --------------------------------- | ------------------------------------------ |
-| **Firmware** | ESP8266 (ESP-12E) + Arduino + PlatformIO | Reads CT sensor data, hosts a REST API     |
+| **Firmware** | ESP32 + Arduino + PlatformIO | Reads CT sensor data, hosts a REST API     |
 | **Client**   | Android (Kotlin + Jetpack Compose)       | Discovers devices, displays energy metrics |
 
-**Communication**: The Android app communicates with the ESP8266 over **HTTP REST** on the local Wi-Fi network. Device discovery uses **mDNS** (`smartsocket.local`).
+**Communication**: The Android app communicates with the ESP32 over **HTTP REST** on the local Wi-Fi network. Device discovery uses **mDNS** (`smartsocket.local`).
 
 ---
 
@@ -63,7 +63,7 @@ smart-wall-socket/
 │   │           └── theme/
 │   ├── build.gradle.kts
 │   └── settings.gradle.kts
-├── firmware/                   # ESP8266 firmware
+├── firmware/                   # ESP32 firmware
 │   ├── src/
 │   │   └── main.cpp
 │   └── platformio.ini
@@ -84,7 +84,7 @@ smart-wall-socket/
 
 | Component              | Specification                    |
 | ---------------------- | -------------------------------- |
-| Microcontroller        | ESP8266 (ESP-12E module)         |
+| Microcontroller        | ESP32 |
 | Current Sensor         | SCT-013-030 (30A / 1V)          |
 | Mains Voltage          | 230V AC / 50Hz (Sri Lanka)       |
 | Development Framework  | Arduino (via PlatformIO)         |
@@ -105,7 +105,7 @@ smart-wall-socket/
    const char *WIFI_SSID = "your-wifi-ssid";
    const char *WIFI_PASS = "your-wifi-password";
    ```
-4. Connect the ESP8266 via USB and flash:
+4. Connect the ESP32 via USB and flash:
    ```bash
    cd firmware
    pio run --target upload
@@ -117,7 +117,7 @@ smart-wall-socket/
 
 ### REST API
 
-Once running, the ESP8266 exposes the following endpoints at `http://smartsocket.local` (or its IP address):
+Once running, the ESP32 exposes the following endpoints at `http://smartsocket.local` (or its IP address):
 
 #### `GET /api/heartbeat`
 
@@ -170,10 +170,10 @@ Returns the latest energy readings.
 
 ### Features
 
-- **Auto-Discovery** — Scans the local network for smart sockets using mDNS service discovery (`_http._tcp.`), with a fallback probe to `192.168.4.1` (ESP8266 AP mode)
-- **Real-Time Dashboard** — Large power readout (watts) with voltage and current cards, updated every second
-- **Energy Tracking** — Accumulates total kWh units consumed during the session
-- **Cost Estimation** — Calculates estimated electricity bill using Sri Lanka's CEB tiered pricing:
+- **Auto-Discovery** - Scans the local network for smart sockets using mDNS service discovery (`_http._tcp.`), with a fallback probe to `192.168.4.1` (ESP32 AP mode)
+- **Real-Time Dashboard** - Large power readout (watts) with voltage and current cards, updated every second
+- **Energy Tracking** - Accumulates total kWh units consumed during the session
+- **Cost Estimation** - Calculates estimated electricity bill using Sri Lanka's CEB tiered pricing:
 
   | Tier         | Rate (LKR/unit) |
   | ------------ | --------------- |
