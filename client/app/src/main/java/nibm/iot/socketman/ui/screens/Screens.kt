@@ -1,14 +1,9 @@
 package nibm.iot.socketman.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,10 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import nibm.iot.socketman.viewmodel.AppState
 import nibm.iot.socketman.viewmodel.EnergyData
 import nibm.iot.socketman.viewmodel.SocketViewModel
@@ -29,29 +22,14 @@ fun MainScreen(viewModel: SocketViewModel, modifier: Modifier = Modifier) {
     val state = viewModel.state
     val context = LocalContext.current
 
-    val permissionsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) { permissions ->
-        val fineLocationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        if (!fineLocationGranted) {
-            Toast.makeText(context, "Location permission is required to find the Socket.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissionsLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-        }
-    }
-
     when (state) {
         is AppState.Disconnected, is AppState.Connecting -> {
             ConnectionScreen(
                 isScanning = viewModel.isScanning,
                 networks = viewModel.scannedNetworks,
                 isConnecting = state is AppState.Connecting,
-                onScan = { viewModel.startScan(context) },
-                onConnect = { ssid, password -> viewModel.connect(context, ssid, password) },
+                onScan = { viewModel.startScan() },
+                onConnect = { deviceId -> viewModel.connect(context, deviceId) },
                 modifier = modifier
             )
         }
@@ -73,47 +51,11 @@ fun ConnectionScreen(
     networks: List<String>,
     isConnecting: Boolean,
     onScan: () -> Unit,
-    onConnect: (String, String) -> Unit,
+    onConnect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedNetwork by remember { mutableStateOf<String?>(null) }
-    var password by remember { mutableStateOf("") }
-
     LaunchedEffect(Unit) {
         onScan()
-    }
-
-    if (selectedNetwork != null) {
-        AlertDialog(
-            onDismissRequest = { selectedNetwork = null; password = "" },
-            title = { Text("Connect to $selectedNetwork") },
-            text = {
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Wi-Fi Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { 
-                        onConnect(selectedNetwork!!, password) 
-                        selectedNetwork = null
-                        password = ""
-                    },
-                    enabled = password.isNotBlank() && !isConnecting
-                ) {
-                    Text("Connect")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { selectedNetwork = null; password = "" }) {
-                    Text("Cancel")
-                }
-            }
-        )
     }
 
     Column(
@@ -163,16 +105,16 @@ fun ConnectionScreen(
 
         if (networks.isEmpty() && !isScanning) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("No Smart Sockets found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No Smart Sockets found on this network.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(networks) { ssid ->
+                items(networks) { deviceId ->
                     Surface(
-                        onClick = { selectedNetwork = ssid },
+                        onClick = { onConnect(deviceId) },
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -182,10 +124,10 @@ fun ConnectionScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("📡", fontSize = 24.sp)
+                            Text("🔌", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
-                                text = ssid,
+                                text = deviceId,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -246,10 +188,8 @@ fun MonitoringScreen(
 
         // Main Power Display
         Surface(
-            shape = RoundedCornerShape(32.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 2.dp,
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
@@ -262,13 +202,13 @@ fun MonitoringScreen(
                 Text(
                     text = "Current Power",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
                     text = "${"%.1f".format(energyData.powerW)} W",
                     style = MaterialTheme.typography.displayLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontSize = 64.sp
                 )
             }
@@ -297,9 +237,8 @@ fun MonitoringScreen(
 
         // Total Energy
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -312,13 +251,13 @@ fun MonitoringScreen(
                 Text(
                     text = "Used Electricity",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Text(
                     text = "${"%.5f".format(totalUnits)} Units",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
         }
@@ -326,7 +265,7 @@ fun MonitoringScreen(
         Spacer(modifier = Modifier.weight(1f))
 
         Text(
-            text = "IP: ${info.ip} | MAC: ${info.mac} | Clients: ${info.clients}",
+            text = "IP: ${info.ip} | MAC: ${info.mac} | RSSI: ${info.rssi}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -336,9 +275,8 @@ fun MonitoringScreen(
 @Composable
 fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = modifier
     ) {
         Column(

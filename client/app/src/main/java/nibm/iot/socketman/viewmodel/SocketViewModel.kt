@@ -1,16 +1,6 @@
 package nibm.iot.socketman.viewmodel
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.net.wifi.WifiManager
-import android.net.wifi.WifiNetworkSpecifier
-import android.os.PatternMatcher
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -32,13 +22,13 @@ import java.net.URL
 sealed class AppState {
     object Disconnected : AppState()
     object Connecting : AppState()
-    data class Connected(val ssid: String, val ip: String, val clients: Int, val mac: String) : AppState()
+    data class Connected(val ssid: String, val ip: String, val rssi: Int, val mac: String) : AppState()
 }
 
 data class EnergyData(
     val currentA: Float = 0f,
     val powerW: Float = 0f,
-    val voltageV: Float = 0f, // Added trailing comma logic internally in my brain, but here it's fine without as it's the last element. Wait, warning said "Missing trailing comma", which implies it is recommended. Let's add it.
+    val voltageV: Float = 0f,
 )
 
 // --- ViewModel ---
@@ -58,15 +48,16 @@ class SocketViewModel : ViewModel() {
     var isScanning by mutableStateOf(false)
         private set
 
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var pollingJob: Job? = null
+    
+    private val socketIp = "192.168.4.1"
 
     fun initCheck() {
         if (state is AppState.Connected) return
         state = AppState.Connecting
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = URL("http://192.168.4.1/api/wifi/status")
+                val url = URL("http://$socketIp/api/wifi/status")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.connectTimeout = 2000
                 conn.readTimeout = 2000
@@ -74,130 +65,78 @@ class SocketViewModel : ViewModel() {
 
                 val json = JSONObject(response)
                 val ssid = json.optString("ssid", "SmartSocket")
-                val ip = json.optString("ip", "192.168.4.1")
-                val clients = json.optInt("clients", 1)
+                val ip = json.optString("ip", socketIp)
+                val rssi = json.optInt("rssi", 1)
                 val mac = json.optString("mac", json.optString("mc", "Unknown"))
 
                 withContext(Dispatchers.Main) {
-                    state = AppState.Connected(ssid, ip, clients, mac)
+                    state = AppState.Connected(ssid, ip, rssi, mac)
                     startPolling()
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     state = AppState.Disconnected
+                    startScan()
                 }
             }
         }
     }
 
-    fun startScan(context: Context) {
+    fun startScan() {
         if (isScanning) return
         isScanning = true
-        
-        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        
-        val intentFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context, intent: Intent) {
-                try {
-                    val results = wifiManager.scanResults
-                    scannedNetworks = results
-                        .mapNotNull { it.SSID }
-                        .filter { it.startsWith("SmartSocket") && it.isNotBlank() }
-                        .distinct()
-                } catch (e: SecurityException) {
-                    // Location permission might be missing
+        scannedNetworks = emptyList()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("http://$socketIp/api/heartbeat")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                
+                val json = JSONObject(response)
+                if (json.optBoolean("ack", false)) {
+                    withContext(Dispatchers.Main) {
+                        scannedNetworks = listOf("SmartSocket ($socketIp)")
+                    }
                 }
-                isScanning = false
-                try {
-                    c.unregisterReceiver(this)
-                } catch (e: Exception) {}
+            } catch (e: Exception) {
+                // Heartbeat failed, no device found at this IP
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isScanning = false
+                }
             }
-        }
-        
-        context.registerReceiver(receiver, intentFilter)
-        
-        val success = wifiManager.startScan()
-        if (!success) {
-            // Throttled or failed. Just read cached results.
-            try {
-                val results = wifiManager.scanResults
-                scannedNetworks = results
-                    .mapNotNull { it.SSID }
-                    .filter { it.startsWith("SmartSocket") && it.isNotBlank() }
-                    .distinct()
-            } catch (e: SecurityException) {
-            }
-            isScanning = false
-            try {
-                context.unregisterReceiver(receiver)
-            } catch (e: Exception) {}
         }
     }
 
-    fun connect(context: Context, ssid: String, password: String) {
+    fun connect(context: Context, deviceId: String) {
         if (state is AppState.Connecting || state is AppState.Connected) return
         state = AppState.Connecting
 
-        val specifier = WifiNetworkSpecifier.Builder()
-            .setSsid(ssid)
-            .setWpa2Passphrase(password)
-            .build()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("http://$socketIp/api/wifi/status")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
 
-        val request = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .setNetworkSpecifier(specifier)
-            .build()
+                val json = JSONObject(response)
+                val ssid = json.optString("ssid", "SmartSocket")
+                val ip = json.optString("ip", socketIp)
+                val rssi = json.optInt("rssi", 1)
+                val mac = json.optString("mac", json.optString("mc", "Unknown"))
 
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                connectivityManager.bindProcessToNetwork(network)
-                viewModelScope.launch(Dispatchers.IO) {
-                    try {
-                        val url = URL("http://192.168.4.1/api/wifi/status")
-                        val conn = url.openConnection() as HttpURLConnection
-                        conn.connectTimeout = 3000
-                        conn.readTimeout = 3000
-                        val response = conn.inputStream.bufferedReader().use { it.readText() }
-
-                        val json = JSONObject(response)
-                        val ssid = json.optString("ssid", "Unknown")
-                        val ip = json.optString("ip", "192.168.4.1")
-                        val clients = json.optInt("clients", 1)
-                        val mac = json.optString("mac", json.optString("mc", "Unknown"))
-
-                        withContext(Dispatchers.Main) {
-                            state = AppState.Connected(ssid, ip, clients, mac)
-                            startPolling()
-                        }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            disconnect(context, "Failed to reach Socket API: ${e.message}")
-                        }
-                    }
+                withContext(Dispatchers.Main) {
+                    state = AppState.Connected(ssid, ip, rssi, mac)
+                    startPolling()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    disconnect(context, "Failed to connect to device.")
                 }
             }
-
-            override fun onUnavailable() {
-                viewModelScope.launch(Dispatchers.Main) {
-                    disconnect(context, "Connection failed or user cancelled.")
-                }
-            }
-
-            override fun onLost(network: Network) {
-                viewModelScope.launch(Dispatchers.Main) {
-                    disconnect(context, "Wi-Fi Connection lost.")
-                }
-            }
-        }
-
-        try {
-            connectivityManager.requestNetwork(request, networkCallback!!)
-        } catch (e: SecurityException) {
-            disconnect(context, "Location permission is required for Wi-Fi scanning.")
         }
     }
 
@@ -207,7 +146,7 @@ class SocketViewModel : ViewModel() {
             var errorCount = 0
             while (isActive && (state is AppState.Connected)) {
                 try {
-                    val url = URL("http://192.168.4.1/api/energy")
+                    val url = URL("http://$socketIp/api/energy")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.connectTimeout = 2000
                     conn.readTimeout = 2000
@@ -224,7 +163,7 @@ class SocketViewModel : ViewModel() {
                         totalUnits += (powerW / 3600000.0)
                         errorCount = 0
                     }
-                } catch (ignored: Exception) {
+                } catch (e: Exception) {
                     errorCount++
                     if (errorCount >= 3) {
                         withContext(Dispatchers.Main) {
@@ -239,23 +178,9 @@ class SocketViewModel : ViewModel() {
     }
 
     fun disconnect(context: Context, reason: String? = null) {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        networkCallback?.let {
-            try {
-                connectivityManager.unregisterNetworkCallback(it)
-            } catch (ignored: Exception) {
-                // Ignore if not registered
-            }
-        }
-        networkCallback = null
-        try {
-            connectivityManager.bindProcessToNetwork(null)
-        } catch (ignored: Exception) {
-            // Ignore
-        }
-
         pollingJob?.cancel()
         state = AppState.Disconnected
+        scannedNetworks = emptyList()
 
         reason?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()

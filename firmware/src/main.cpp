@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
 #include <ArduinoJson.h>
 #include "EmonLib.h"
 
@@ -11,10 +12,6 @@ const uint8_t FIXED_MAC[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x01 };
 const char* WIFI_SSID = "ESP GATE";
 const char* WIFI_PASS = "123123123";
 
-// ─── Static IP Configuration ────────────────────────────────────────
-IPAddress staticIP(192, 168, 4, 100);
-IPAddress gateway(192, 168, 4, 1);
-IPAddress subnet(255, 255, 255, 0);
 
 // ─── Energy Monitor ─────────────────────────────────────────────────
 EnergyMonitor emon1;
@@ -29,6 +26,7 @@ double lastWattage = 0.0;
 
 // ─── Forward declarations ───────────────────────────────────────────
 void handleHeartbeat();
+void handleWifiStatus();
 void handleEnergy();
 void handleNotFound();
 
@@ -37,7 +35,7 @@ void handleNotFound();
 // =====================================================================
 void setup() {
   Serial.begin(115200);
-  while (!Serial) {}
+  delay(100);  // brief settle time
   Serial.println("\nStarting Smart Wall Socket...");
 
   // --- Apply fixed MAC address ---
@@ -46,9 +44,8 @@ void setup() {
                 FIXED_MAC[0], FIXED_MAC[1], FIXED_MAC[2],
                 FIXED_MAC[3], FIXED_MAC[4], FIXED_MAC[5]);
 
-  // --- Connect to WiFi with static IP ---
+  // --- Connect to WiFi (DHCP) ---
   WiFi.mode(WIFI_STA);
-  WiFi.config(staticIP, gateway, subnet);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   Serial.printf("Connecting to %s", WIFI_SSID);
@@ -60,8 +57,15 @@ void setup() {
   Serial.print("Connected! IP: ");
   Serial.println(WiFi.localIP());
 
+  // --- Start mDNS (smartsocket.local) ---
+  if (MDNS.begin("smartsocket")) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("mDNS started: smartsocket.local");
+  }
+
   // --- Register API routes & start server ---
   server.on("/api/heartbeat", HTTP_GET, handleHeartbeat);
+  server.on("/api/wifi/status", HTTP_GET, handleWifiStatus);
   server.on("/api/energy", HTTP_GET, handleEnergy);
   server.onNotFound(handleNotFound);
   server.begin();
@@ -78,6 +82,7 @@ void setup() {
 // =====================================================================
 void loop() {
   server.handleClient();
+  MDNS.update();
 
   // ─── Electricity Monitoring (unchanged) ───────────────────────────
   // Calculate Irms (1480 samples provides a solid average for 50Hz AC mains)
@@ -111,6 +116,23 @@ void loop() {
 // =====================================================================
 void handleHeartbeat() {
   server.send(200, "application/json", "{\"ack\":true}");
+}
+
+// =====================================================================
+//  GET /api/wifi/status
+// =====================================================================
+void handleWifiStatus() {
+  JsonDocument doc;
+
+  doc["connected"] = (WiFi.status() == WL_CONNECTED);
+  doc["ssid"]      = WiFi.SSID();
+  doc["ip"]        = WiFi.localIP().toString();
+  doc["mac"]       = WiFi.macAddress();
+  doc["rssi"]      = WiFi.RSSI();
+
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
 }
 
 // =====================================================================
