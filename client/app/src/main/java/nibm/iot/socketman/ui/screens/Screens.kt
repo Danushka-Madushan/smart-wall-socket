@@ -5,7 +5,10 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,8 +47,11 @@ fun MainScreen(viewModel: SocketViewModel, modifier: Modifier = Modifier) {
     when (state) {
         is AppState.Disconnected, is AppState.Connecting -> {
             ConnectionScreen(
+                isScanning = viewModel.isScanning,
+                networks = viewModel.scannedNetworks,
                 isConnecting = state is AppState.Connecting,
-                onConnect = { password -> viewModel.connect(context, password) },
+                onScan = { viewModel.startScan(context) },
+                onConnect = { ssid, password -> viewModel.connect(context, ssid, password) },
                 modifier = modifier
             )
         }
@@ -63,68 +69,142 @@ fun MainScreen(viewModel: SocketViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 fun ConnectionScreen(
+    isScanning: Boolean,
+    networks: List<String>,
     isConnecting: Boolean,
-    onConnect: (String) -> Unit,
+    onScan: () -> Unit,
+    onConnect: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectedNetwork by remember { mutableStateOf<String?>(null) }
     var password by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        onScan()
+    }
+
+    if (selectedNetwork != null) {
+        AlertDialog(
+            onDismissRequest = { selectedNetwork = null; password = "" },
+            title = { Text("Connect to $selectedNetwork") },
+            text = {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Wi-Fi Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { 
+                        onConnect(selectedNetwork!!, password) 
+                        selectedNetwork = null
+                        password = ""
+                    },
+                    enabled = password.isNotBlank() && !isConnecting
+                ) {
+                    Text("Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedNetwork = null; password = "" }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "⚡",
-            fontSize = 80.sp
-        )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(text = "⚡", fontSize = 64.sp)
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "SocketMan",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = "Connect to your Smart Wall Socket",
-            style = MaterialTheme.typography.bodyLarge,
+            text = "Select your Smart Wall Socket",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Wi-Fi Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = { onConnect(password) },
-            enabled = password.isNotBlank() && !isConnecting,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isConnecting) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("Connecting...", fontSize = 18.sp)
-            } else {
-                Text("Connect", fontSize = 18.sp)
+            Text(
+                text = "Available Sockets",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            IconButton(onClick = onScan, enabled = !isScanning) {
+                if (isScanning) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("🔄", fontSize = 20.sp)
+                }
             }
         }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (networks.isEmpty() && !isScanning) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("No Smart Sockets found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(networks) { ssid ->
+                    Surface(
+                        onClick = { selectedNetwork = ssid },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📡", fontSize = 24.sp)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = ssid,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isConnecting) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Connecting...", color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -166,8 +246,10 @@ fun MonitoringScreen(
 
         // Main Power Display
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(32.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shadowElevation = 2.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
@@ -180,13 +262,13 @@ fun MonitoringScreen(
                 Text(
                     text = "Current Power",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "${"%.1f".format(energyData.powerW)} W",
                     style = MaterialTheme.typography.displayLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 64.sp
                 )
             }
@@ -215,8 +297,9 @@ fun MonitoringScreen(
 
         // Total Energy
         Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -229,13 +312,13 @@ fun MonitoringScreen(
                 Text(
                     text = "Used Electricity",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "${"%.5f".format(totalUnits)} Units",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -253,8 +336,9 @@ fun MonitoringScreen(
 @Composable
 fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
     ) {
         Column(

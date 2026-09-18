@@ -7,14 +7,14 @@
 // ─── Fixed MAC Address ───────────────────────────────────────────────
 const uint8_t FIXED_MAC[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x01 };
 
-// ─── Access Point Configuration ──────────────────────────────────────
-const char* AP_SSID     = "SmartSocket-AP";
-const char* AP_PASSWORD = "socket1234";   // min 8 chars for WPA2
+// ─── WiFi Credentials ───────────────────────────────────────────────
+const char* WIFI_SSID = "ESP GATE";
+const char* WIFI_PASS = "123123123";
 
-// ─── Static IP for the AP ────────────────────────────────────────────
-IPAddress apIP(192, 168, 4, 1);
-IPAddress apGateway(192, 168, 4, 1);
-IPAddress apSubnet(255, 255, 255, 0);
+// ─── Static IP Configuration ────────────────────────────────────────
+IPAddress staticIP(192, 168, 4, 100);
+IPAddress gateway(192, 168, 4, 1);
+IPAddress subnet(255, 255, 255, 0);
 
 // ─── Energy Monitor ─────────────────────────────────────────────────
 EnergyMonitor emon1;
@@ -28,7 +28,7 @@ double lastIrms    = 0.0;
 double lastWattage = 0.0;
 
 // ─── Forward declarations ───────────────────────────────────────────
-void handleWifiStatus();
+void handleHeartbeat();
 void handleEnergy();
 void handleNotFound();
 
@@ -41,23 +41,28 @@ void setup() {
   Serial.println("\nStarting Smart Wall Socket...");
 
   // --- Apply fixed MAC address ---
-  wifi_set_macaddr(SOFTAP_IF, const_cast<uint8_t*>(FIXED_MAC));
+  wifi_set_macaddr(STATION_IF, const_cast<uint8_t*>(FIXED_MAC));
   Serial.printf("MAC address set to: %02X:%02X:%02X:%02X:%02X:%02X\n",
                 FIXED_MAC[0], FIXED_MAC[1], FIXED_MAC[2],
                 FIXED_MAC[3], FIXED_MAC[4], FIXED_MAC[5]);
 
-  // --- Start WiFi in AP-only mode with static IP ---
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(apIP, apGateway, apSubnet);
-  WiFi.softAP(AP_SSID, AP_PASSWORD);
-  Serial.print("AP started: ");
-  Serial.println(AP_SSID);
-  Serial.print("AP IP address: ");
-  Serial.println(WiFi.softAPIP());
+  // --- Connect to WiFi with static IP ---
+  WiFi.mode(WIFI_STA);
+  WiFi.config(staticIP, gateway, subnet);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  Serial.printf("Connecting to %s", WIFI_SSID);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("Connected! IP: ");
+  Serial.println(WiFi.localIP());
 
   // --- Register API routes & start server ---
-  server.on("/api/wifi/status", HTTP_GET, handleWifiStatus);
-  server.on("/api/energy",      HTTP_GET, handleEnergy);
+  server.on("/api/heartbeat", HTTP_GET, handleHeartbeat);
+  server.on("/api/energy", HTTP_GET, handleEnergy);
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println("HTTP server started on port 80");
@@ -102,19 +107,10 @@ void loop() {
 }
 
 // =====================================================================
-//  GET /api/wifi/status
+//  GET /api/heartbeat
 // =====================================================================
-void handleWifiStatus() {
-  JsonDocument doc;
-
-  doc["ssid"]    = String(AP_SSID);
-  doc["ip"]      = WiFi.softAPIP().toString();
-  doc["mac"]     = WiFi.softAPmacAddress();
-  doc["clients"] = WiFi.softAPgetStationNum();
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
+void handleHeartbeat() {
+  server.send(200, "application/json", "{\"ack\":true}");
 }
 
 // =====================================================================
