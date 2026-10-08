@@ -204,7 +204,7 @@ fun PoPClaimScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text("Executing Claim...")
             } else {
-                Text("Submit Claim Request")
+                Text("Verify Claim")
             }
         }
     }
