@@ -130,14 +130,7 @@ class SmartSwitchApiClient {
         try {
             val (code, responseStr) = getRequestWithHeaders("http://$ip/api/relay", masterToken)
             if (code == 200) {
-                val json = JSONObject(responseStr)
-                val map = mutableMapOf<String, Boolean>()
-                val keys = json.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    map[key] = json.optBoolean(key, false)
-                }
-                map
+                parseRelayStateResponse(responseStr)
             } else {
                 null
             }
