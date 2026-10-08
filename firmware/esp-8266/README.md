@@ -56,28 +56,43 @@ Production firmware for the **ESP8266 NodeMCU (ESP-12E)** smart relay node in th
 
 ## Modular Code Structure
 
-The firmware is organized into single-responsibility C++ modules inside `firmware/esp-8266/src/`:
+The firmware is organized following the official **PlatformIO directory structure** (`include/`, `lib/`, and `src/`):
 
 ```
-firmware/esp-8266/src/
-├── Config.h & Config.cpp              # Hardware pins, credentials, constants, and unified DEVICE_ID
-├── Storage.h & Storage.cpp            # EEPROM manager with rotate-and-XOR checksum integrity
-├── RelayController.h & .cpp           # Glitch-suppressed GPIO12/14 relay driver and state tracker
-├── DisplayManager.h & .cpp            # 0.91" 128x32 OLED renderer, layout, toasts, and headless fallback
-├── NetworkManager.h & .cpp            # Wi-Fi client auto-reconnect and dynamic DNS-SD TXT publisher
-├── ApiServer.h & .cpp                 # ESP8266WebServer routing, CORS preflight, PoP auth, and endpoints
-└── main.cpp                           # Boot orchestrator and continuous event loop dispatcher
+firmware/esp-8266/
+├── include/
+│   └── Config.h                       # Project-wide pins, credentials, constants, and unified DEVICE_ID
+├── lib/
+│   ├── Storage/
+│   │   ├── Storage.h
+│   │   └── Storage.cpp                # EEPROM manager with rotate-and-XOR checksum integrity
+│   ├── RelayController/
+│   │   ├── RelayController.h
+│   │   └── RelayController.cpp        # Glitch-suppressed GPIO12/14 relay driver and state tracker
+│   ├── DisplayManager/
+│   │   ├── DisplayManager.h
+│   │   └── DisplayManager.cpp         # 0.91" 128x32 OLED renderer, layout, toasts, and headless fallback
+│   ├── NetworkManager/
+│   │   ├── NetworkManager.h
+│   │   └── NetworkManager.cpp         # Wi-Fi client auto-reconnect and dynamic DNS-SD TXT publisher
+│   └── ApiServer/
+│       ├── ApiServer.h
+│       └── ApiServer.cpp              # ESP8266WebServer routing, CORS preflight, PoP auth, and endpoints
+├── src/
+│   ├── Config.cpp                     # Hardware instance definition values for Config.h
+│   └── main.cpp                       # Boot orchestrator and continuous event loop dispatcher
+└── platformio.ini                     # Configured with build_flags = -Iinclude & lib_ldf_mode = deep+
 ```
 
-| Module | Source Files | Responsibility |
+| Module | Location | Responsibility |
 |---|---|---|
-| **Config** | `Config.h`, `Config.cpp` | Single source of truth for device parameters. Modifying `DEVICE_ID` here automatically updates hostname, mDNS, splash screen, and API responses. |
-| **Storage** | `Storage.h`, `Storage.cpp` | Manages non-volatile EEPROM (512B), validates data against checksum corruption, persists `master_token`, and handles factory reset. |
-| **RelayController** | `RelayController.h`, `RelayController.cpp` | Controls physical relays on `D5` (GPIO14) and `D6` (GPIO12). Suppresses floating boot glitches (`digitalWrite(LOW)` before `pinMode(OUTPUT)`). |
-| **DisplayManager** | `DisplayManager.h`, `DisplayManager.cpp` | Manages 128x32 OLED UI, dynamic splash centering, 1500µs clock-stretch limit protection, and headless mode fallback. |
-| **NetworkManager** | `NetworkManager.h`, `NetworkManager.cpp` | Connects to `ESP GATE`, runs background auto-reconnect, and publishes `smartsocket.local` with dynamic TXT records. |
-| **ApiServer** | `ApiServer.h`, `ApiServer.cpp` | Handles 11 REST API routes, universal CORS headers (`OPTIONS` -> `204`), 1KB payload gate, and PoP Bearer token verification. |
-| **Main** | `main.cpp` | High-level orchestrator initializing all subsystems in order and dispatching events in `loop()`. |
+| **Config** | `include/Config.h`, `src/Config.cpp` | Single source of truth for device parameters. Modifying `DEVICE_ID` here automatically updates hostname, mDNS, splash screen, and API responses. |
+| **Storage** | `lib/Storage/` | Private library managing non-volatile EEPROM (512B), validating checksums, persisting `master_token`, and handling factory reset. |
+| **RelayController** | `lib/RelayController/` | Private library controlling physical relays on `D5` (GPIO14) and `D6` (GPIO12). Suppresses floating boot glitches (`digitalWrite(LOW)` before `pinMode(OUTPUT)`). |
+| **DisplayManager** | `lib/DisplayManager/` | Private library managing 128x32 OLED UI, dynamic splash centering, 1500µs clock-stretch limit protection, and headless mode fallback. |
+| **NetworkManager** | `lib/NetworkManager/` | Private library connecting to `ESP GATE`, running background auto-reconnect, and publishing `smartsocket.local` with dynamic TXT records. |
+| **ApiServer** | `lib/ApiServer/` | Private library handling 11 REST API routes, universal CORS headers (`OPTIONS` -> `204`), 1KB payload gate, and PoP Bearer token verification. |
+| **Main** | `src/main.cpp` | Application entry point initializing all subsystems in order and dispatching events in `loop()`. |
 
 ---
 
