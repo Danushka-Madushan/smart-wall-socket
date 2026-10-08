@@ -11,13 +11,37 @@ if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
+fun resolveKeystoreFile(rawPath: String?): File? {
+    if (rawPath.isNullOrBlank()) return null
+    val f = file(rawPath)
+    if (f.exists()) return f
+    val rootF = rootProject.file(rawPath)
+    if (rootF.exists()) return rootF
+    return null
+}
+
+val releaseStorePath: String? = System.getenv("KEYSTORE_FILE") ?: keystoreProperties.getProperty("storeFile")
+val releaseStorePass: String? = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProperties.getProperty("storePassword")
+val releaseKeyAlias: String? = System.getenv("KEY_ALIAS") ?: keystoreProperties.getProperty("keyAlias")
+val releaseKeyPass: String? = System.getenv("KEY_PASSWORD") ?: keystoreProperties.getProperty("keyPassword")
+
+val releaseStoreFile = resolveKeystoreFile(releaseStorePath)
+val hasReleaseSigning = releaseStoreFile != null &&
+        !releaseStorePass.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPass.isNullOrBlank()
+
 android {
     signingConfigs {
-        create("release") {
-            storeFile = file(keystoreProperties.getProperty("storeFile"))
-            storePassword = keystoreProperties.getProperty("storePassword")
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePass
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPass
+                enableV1Signing = true
+                enableV2Signing = true
+            }
         }
     }
     namespace = "nibm.iot.socketman"
@@ -40,7 +64,11 @@ android {
             optimization {
                 enable = false
             }
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
@@ -61,6 +89,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    
+    // CameraX & MLKit Barcode Scanning for PoP QR Claiming
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
