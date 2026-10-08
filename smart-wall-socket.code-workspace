@@ -4,8 +4,8 @@
 			"path": "."
 		},
 		{
-			"name": "firmware",
-			"path": "firmware"
+			"name": "firmware-8266",
+			"path": "firmware/esp-8266"
 		}
 	],
 	"settings": {}
