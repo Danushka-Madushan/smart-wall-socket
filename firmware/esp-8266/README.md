@@ -336,6 +336,8 @@ Lightweight health-check endpoint to confirm the node is responsive.
   "id": "RELAY_8266_NODE",
   "claimed": true,
   "uptime_s": 348,
+  "free_heap": 31240,
+  "rssi": -52,
   "relays": {
     "1": true,
     "2": false
@@ -396,6 +398,10 @@ Pairs an unclaimed device by providing the factory PoP secret and registering th
     ```json
     { "error": "Device already claimed" }
     ```
+  * **`413 Payload Too Large`**: Request body exceeds 1024 bytes.
+    ```json
+    { "error": "Payload too large (max 1KB)" }
+    ```
 
 ---
 
@@ -430,8 +436,10 @@ Fetches the current state of both relays.
   * **`200 OK`**:
     ```json
     {
-      "1": true,
-      "2": false
+      "relays": {
+        "1": true,
+        "2": false
+      }
     }
     ```
   * **`401 Unauthorized`**: Device unclaimed or token invalid.
@@ -488,6 +496,7 @@ Primary relay switching endpoint. Supports controlling a single switch, both swi
     { "error": "Device unclaimed. Claim device first." }
     ```
   * **`400 Bad Request`**: Missing body or unparsable relay instruction.
+  * **`413 Payload Too Large`**: Request body exceeds 1024 bytes (`{"error": "Payload too large (max 1KB)"}`).
 
 ---
 
@@ -648,12 +657,14 @@ struct DeviceStorage {
   uint32_t magic;         // 0x506F5031 ("PoP1") magic header
   bool claimed;           // Boolean pairing lock state
   char masterToken[65];   // Null-terminated string holding authorization token
+  uint32_t checksum;      // Rotate-and-XOR integrity checksum
 };
 ```
 
-1. **First Boot / Flash**: If `magic != 0x506F5031`, memory is automatically formatted with factory defaults (`claimed = false`, blank token).
-2. **Commit Lifecycle**: Flash is only written when `POST /api/claim` or `POST /api/unclaim` succeeds, minimizing flash wear.
-3. **Power Resilience**: In case of a blackout, the device reboots directly into `[CLAIMED]` state with its registered `master_token` intact.
+1. **First Boot / Flash**: If `magic != 0x506F5031` or checksum validation fails, memory is automatically formatted with factory defaults (`claimed = false`, blank token).
+2. **Checksum Verification**: Uses a rotate-and-XOR checksum over `magic`, `claimed`, and `masterToken` to verify non-volatile integrity and protect against corrupted flash reads or partial writes.
+3. **Commit Lifecycle**: Flash is only written when `POST /api/claim` or `POST /api/unclaim` succeeds, minimizing flash wear.
+4. **Power Resilience**: In case of a blackout, the device reboots directly into `[CLAIMED]` state with its registered `master_token` intact.
 
 ---
 
