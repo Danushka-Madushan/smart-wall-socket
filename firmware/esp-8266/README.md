@@ -6,13 +6,15 @@ Production firmware for the **ESP8266 NodeMCU (ESP-12E)** smart relay node in th
 
 ## Table of Contents
 1. [System Architecture](#system-architecture)
-2. [Hardware & Pin Mapping](#hardware--pin-mapping)
-3. [Security Architecture: Proof of Possession (PoP)](#security-architecture-proof-of-possession-pop)
+2. [Modular Code Structure](#modular-code-structure)
+3. [Hardware & Pin Mapping](#hardware--pin-mapping)
+4. [Security Architecture: Proof of Possession (PoP)](#security-architecture-proof-of-possession-pop)
    - [Physical QR Code Payload](#physical-qr-code-payload)
+   - [Master Token Generation Guide](#master-token-generation-guide)
    - [Three-State Security Lock](#three-state-security-lock)
-4. [Multicast DNS (mDNS) Discovery](#multicast-dns-mdns-discovery)
-5. [OLED Display Interface (128x32)](#oled-display-interface-128x32)
-6. [Complete REST API Specification](#complete-rest-api-specification)
+5. [Multicast DNS (mDNS) Discovery](#multicast-dns-mdns-discovery)
+6. [OLED Display Interface (128x32)](#oled-display-interface-128x32)
+7. [Complete REST API Specification](#complete-rest-api-specification)
    - [GET /api/info](#get-apiinfo)
    - [GET /api/heartbeat](#get-apiheartbeat)
    - [GET /api/wifi/status](#get-apiwifistatus)
@@ -24,9 +26,9 @@ Production firmware for the **ESP8266 NodeMCU (ESP-12E)** smart relay node in th
    - [POST /api/relay/2](#post-apirelay2)
    - [POST /api/relay/all](#post-apirelayall)
    - [POST /api/unclaim](#post-apiunclaim-or-post-apireset)
-7. [Step-by-Step Usage & Testing Guide (cURL)](#step-by-step-usage--testing-guide-curl)
-8. [Persistent Storage (EEPROM)](#persistent-storage-eeprom)
-9. [Build and Flash Instructions](#build-and-flash-instructions)
+8. [Step-by-Step Usage & Testing Guide (cURL)](#step-by-step-usage--testing-guide-curl)
+9. [Persistent Storage (EEPROM)](#persistent-storage-eeprom)
+10. [Build and Flash Instructions](#build-and-flash-instructions)
 
 ---
 
@@ -49,6 +51,33 @@ Production firmware for the **ESP8266 NodeMCU (ESP-12E)** smart relay node in th
 | SSD1306       |                  | Relay 1 (SW1) |                  | Relay 2 (SW2) |
 +---------------+                  +---------------+                  +---------------+
 ```
+
+---
+
+## Modular Code Structure
+
+The firmware is organized into single-responsibility C++ modules inside `firmware/esp-8266/src/`:
+
+```
+firmware/esp-8266/src/
+├── Config.h & Config.cpp              # Hardware pins, credentials, constants, and unified DEVICE_ID
+├── Storage.h & Storage.cpp            # EEPROM manager with rotate-and-XOR checksum integrity
+├── RelayController.h & .cpp           # Glitch-suppressed GPIO12/14 relay driver and state tracker
+├── DisplayManager.h & .cpp            # 0.91" 128x32 OLED renderer, layout, toasts, and headless fallback
+├── NetworkManager.h & .cpp            # Wi-Fi client auto-reconnect and dynamic DNS-SD TXT publisher
+├── ApiServer.h & .cpp                 # ESP8266WebServer routing, CORS preflight, PoP auth, and endpoints
+└── main.cpp                           # Boot orchestrator and continuous event loop dispatcher
+```
+
+| Module | Source Files | Responsibility |
+|---|---|---|
+| **Config** | `Config.h`, `Config.cpp` | Single source of truth for device parameters. Modifying `DEVICE_ID` here automatically updates hostname, mDNS, splash screen, and API responses. |
+| **Storage** | `Storage.h`, `Storage.cpp` | Manages non-volatile EEPROM (512B), validates data against checksum corruption, persists `master_token`, and handles factory reset. |
+| **RelayController** | `RelayController.h`, `RelayController.cpp` | Controls physical relays on `D5` (GPIO14) and `D6` (GPIO12). Suppresses floating boot glitches (`digitalWrite(LOW)` before `pinMode(OUTPUT)`). |
+| **DisplayManager** | `DisplayManager.h`, `DisplayManager.cpp` | Manages 128x32 OLED UI, dynamic splash centering, 1500µs clock-stretch limit protection, and headless mode fallback. |
+| **NetworkManager** | `NetworkManager.h`, `NetworkManager.cpp` | Connects to `ESP GATE`, runs background auto-reconnect, and publishes `smartsocket.local` with dynamic TXT records. |
+| **ApiServer** | `ApiServer.h`, `ApiServer.cpp` | Handles 11 REST API routes, universal CORS headers (`OPTIONS` -> `204`), 1KB payload gate, and PoP Bearer token verification. |
+| **Main** | `main.cpp` | High-level orchestrator initializing all subsystems in order and dispatching events in `loop()`. |
 
 ---
 
