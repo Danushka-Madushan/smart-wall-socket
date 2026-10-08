@@ -27,6 +27,7 @@
 #define OLED_SCL D1 // GPIO5
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+bool hasDisplay = false; // Tracks if OLED hardware is present and responding
 
 // =====================================================================
 //  DEVICE & PROOF OF POSSESSION (PoP) CONFIGURATION
@@ -44,8 +45,11 @@ const uint8_t FIXED_MAC[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x01};
 const char *WIFI_SSID = "ESP GATE";
 const char *WIFI_PASS = "123123123";
 
+// Maximum HTTP payload allowed (protects 80KB RAM from heap exhaustion)
+const size_t MAX_PAYLOAD_SIZE = 1024;
+
 // =====================================================================
-//  PERSISTENT STORAGE (EEPROM)
+//  PERSISTENT STORAGE (EEPROM) WITH INTEGRITY CHECKSUM
 // =====================================================================
 #define EEPROM_SIZE 512
 #define EEPROM_MAGIC 0x506F5031 // "PoP1"
@@ -55,9 +59,20 @@ struct DeviceStorage
   uint32_t magic;
   bool claimed;
   char masterToken[65];
+  uint32_t checksum;
 };
 
 DeviceStorage deviceState;
+
+uint32_t calculateChecksum(const DeviceStorage &storage)
+{
+  uint32_t sum = storage.magic ^ (storage.claimed ? 0xAA55AA55 : 0x55AA55AA);
+  for (size_t i = 0; i < sizeof(storage.masterToken); i++)
+  {
+    sum = ((sum << 5) | (sum >> 27)) ^ (uint8_t)storage.masterToken[i];
+  }
+  return sum;
+}
 
 // =====================================================================
 //  GLOBAL RUNTIME STATE
@@ -66,7 +81,8 @@ bool r1State = false;
 bool r2State = false;
 
 char currentToast[32] = "";
-unsigned long toastExpiry = 0;
+unsigned long toastStartTime = 0;
+unsigned long toastDuration = 0;
 
 ESP8266WebServer server(80);
 
@@ -80,8 +96,11 @@ void setupMDNS();
 void updateMDNSTXT();
 void updateDisplay();
 void showToast(const char *msg, unsigned long durationMs = 2500);
+bool isToastActive();
 void setRelays(bool relay1, bool relay2, const char *toastMsg = nullptr);
 bool isAuthorized();
+void sendResponse(int code, const char *contentType, const String &content);
+void handleOptions();
 
 void handleHeartbeat();
 void handleInfo();
@@ -107,32 +126,40 @@ void setup()
   Serial.println(F("   Smart Wall Socket - Relay Node"));
   Serial.println(F("========================================"));
 
-  // 1. Initialize Relay Pins (Default OFF for safety)
-  pinMode(RELAY1_PIN, OUTPUT);
-  pinMode(RELAY2_PIN, OUTPUT);
+  // 1. Hardware Glitch Suppression: Set state LOW BEFORE pinMode OUTPUT
+  // Eliminates sub-microsecond floating glitches on transistor bases
   digitalWrite(RELAY1_PIN, LOW);
+  pinMode(RELAY1_PIN, OUTPUT);
   digitalWrite(RELAY2_PIN, LOW);
+  pinMode(RELAY2_PIN, OUTPUT);
 
-  // 2. Initialize I2C and OLED Display
+  // 2. Initialize I2C with clock stretch protection
   Wire.begin(OLED_SDA, OLED_SCL);
+  Wire.setClockStretchLimit(1500); // Prevents bus hangs if I2C slave is non-responsive
+
   if (display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
   {
+    hasDisplay = true;
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
     display.setCursor(10, 4);
     display.println(F("SMART SWITCH 2CH"));
-    display.setCursor(16, 18);
-    display.println(F("RELAY_8266_NODE"));
+    int16_t xPos = (SCREEN_WIDTH - (strlen(DEVICE_ID) * 6)) / 2;
+    if (xPos < 0)
+      xPos = 0;
+    display.setCursor(xPos, 18);
+    display.println(DEVICE_ID);
     display.display();
     delay(1500);
   }
   else
   {
-    Serial.println(F("Warning: OLED display initialization failed!"));
+    hasDisplay = false;
+    Serial.println(F("Notice: OLED not detected. Operating in headless mode."));
   }
 
-  // 3. Load Storage / Claim State from EEPROM
+  // 3. Load Storage / Claim State from EEPROM with Checksum Integrity
   loadConfig();
 
   // 4. Set Fixed MAC Address
@@ -141,13 +168,13 @@ void setup()
                 FIXED_MAC[0], FIXED_MAC[1], FIXED_MAC[2],
                 FIXED_MAC[3], FIXED_MAC[4], FIXED_MAC[5]);
 
-  // 5. Connect to Wi-Fi
+  // 5. Connect to Wi-Fi with Auto-Reconnect
   setupWiFi();
 
   // 6. Start Multicast DNS (mDNS)
   setupMDNS();
 
-  // 7. Configure HTTP Server Routes & Header Tracking
+  // 7. Configure HTTP Server Routes, Headers, and CORS
   const char *headerkeys[] = {"Authorization", "X-Master-Token"};
   server.collectHeaders(headerkeys, sizeof(headerkeys) / sizeof(char *));
 
@@ -169,7 +196,7 @@ void setup()
   server.begin();
   Serial.println(F("HTTP server started on port 80"));
 
-  // 8. Refresh OLED with ready state
+  // 8. Refresh Display
   updateDisplay();
 }
 
@@ -181,9 +208,30 @@ void loop()
   server.handleClient();
   MDNS.update();
 
-  // Expire temporary toast messages on display
+  // Autonomous Wi-Fi Reconnection & mDNS Recovery Tracker
+  static bool wasConnected = false;
+  bool isConnected = (WiFi.status() == WL_CONNECTED);
+
+  if (isConnected != wasConnected)
+  {
+    wasConnected = isConnected;
+    if (isConnected)
+    {
+      Serial.print(F("Wi-Fi Reconnected! IP: "));
+      Serial.println(WiFi.localIP());
+      updateMDNSTXT();
+      showToast("WiFi Connected", 2000);
+    }
+    else
+    {
+      Serial.println(F("Wi-Fi connection lost. Waiting for auto-reconnect..."));
+      updateDisplay();
+    }
+  }
+
+  // Millis overflow-safe toast expiration
   static bool hadToast = false;
-  if (millis() < toastExpiry)
+  if (isToastActive())
   {
     hadToast = true;
   }
@@ -194,7 +242,7 @@ void loop()
     updateDisplay();
   }
 
-  // Periodic display refresh for Wi-Fi status changes
+  // Periodic display refresh for Wi-Fi status or IP updates
   static unsigned long lastDisplayTick = 0;
   if (millis() - lastDisplayTick > 5000)
   {
@@ -208,8 +256,10 @@ void loop()
 // =====================================================================
 void setupWiFi()
 {
+  WiFi.persistent(false);      // Prevents unnecessary flash writes on boot
+  WiFi.setAutoReconnect(true); // Enables background reconnection by SDK
   WiFi.mode(WIFI_STA);
-  WiFi.hostname("SmartSocket-ESP");
+  WiFi.hostname(DEVICE_ID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   showToast("Connecting WiFi...", 5000);
@@ -231,7 +281,7 @@ void setupWiFi()
   }
   else
   {
-    Serial.println(F("Wi-Fi connection pending or failed. Continuing boot..."));
+    Serial.println(F("Wi-Fi pending. Auto-reconnect active in background."));
   }
 }
 
@@ -266,16 +316,18 @@ void updateMDNSTXT()
 }
 
 // =====================================================================
-//  EEPROM STORAGE
+//  EEPROM STORAGE WITH CHECKSUM INTEGRITY
 // =====================================================================
 void loadConfig()
 {
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.get(0, deviceState);
 
-  if (deviceState.magic != EEPROM_MAGIC)
+  uint32_t expectedChecksum = calculateChecksum(deviceState);
+
+  if (deviceState.magic != EEPROM_MAGIC || deviceState.checksum != expectedChecksum)
   {
-    Serial.println(F("EEPROM uninitialized. Applying factory default (UNCLAIMED)."));
+    Serial.println(F("EEPROM uninitialized or checksum mismatch. Applying factory default."));
     deviceState.magic = EEPROM_MAGIC;
     deviceState.claimed = false;
     memset(deviceState.masterToken, 0, sizeof(deviceState.masterToken));
@@ -283,30 +335,40 @@ void loadConfig()
   }
   else
   {
-    Serial.printf("Config loaded from EEPROM: Status=%s\n",
+    Serial.printf("Config loaded cleanly: Status=%s\n",
                   deviceState.claimed ? "CLAIMED" : "UNCLAIMED");
   }
 }
 
 void saveConfig()
 {
+  deviceState.checksum = calculateChecksum(deviceState);
   EEPROM.put(0, deviceState);
   EEPROM.commit();
 }
 
 // =====================================================================
-//  DISPLAY UI (128x32 OLED)
+//  DISPLAY UI (128x32 OLED) WITH FAULT TOLERANCE
 // =====================================================================
 void showToast(const char *msg, unsigned long durationMs)
 {
   strncpy(currentToast, msg, sizeof(currentToast) - 1);
   currentToast[sizeof(currentToast) - 1] = '\0';
-  toastExpiry = millis() + durationMs;
+  toastStartTime = millis();
+  toastDuration = durationMs;
   updateDisplay();
+}
+
+bool isToastActive()
+{
+  return (strlen(currentToast) > 0 && (millis() - toastStartTime < toastDuration));
 }
 
 void updateDisplay()
 {
+  if (!hasDisplay)
+    return; // Safe headless fallback if OLED is not installed or disconnected
+
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
@@ -345,7 +407,7 @@ void updateDisplay()
 
   // Line 2: Middle Status or Toast (Y=13)
   display.setCursor(0, 13);
-  if (millis() < toastExpiry && strlen(currentToast) > 0)
+  if (isToastActive())
   {
     display.print(currentToast);
   }
@@ -403,8 +465,24 @@ void setRelays(bool relay1, bool relay2, const char *toastMsg)
 }
 
 // =====================================================================
-//  AUTHENTICATION HELPER
+//  CORS & AUTHENTICATION HELPERS
 // =====================================================================
+void sendResponse(int code, const char *contentType, const String &content)
+{
+  server.sendHeader(F("Access-Control-Allow-Origin"), F("*"));
+  server.sendHeader(F("Access-Control-Allow-Methods"), F("GET, POST, OPTIONS"));
+  server.sendHeader(F("Access-Control-Allow-Headers"), F("Content-Type, Authorization, X-Master-Token"));
+  server.send(code, contentType, content);
+}
+
+void handleOptions()
+{
+  server.sendHeader(F("Access-Control-Allow-Origin"), F("*"));
+  server.sendHeader(F("Access-Control-Allow-Methods"), F("GET, POST, OPTIONS"));
+  server.sendHeader(F("Access-Control-Allow-Headers"), F("Content-Type, Authorization, X-Master-Token"));
+  server.send(204);
+}
+
 bool isAuthorized()
 {
   if (!deviceState.claimed)
@@ -441,6 +519,10 @@ bool isAuthorized()
   // 3. Check JSON body
   if (server.hasArg("plain"))
   {
+    if (server.arg("plain").length() > MAX_PAYLOAD_SIZE)
+    {
+      return false;
+    }
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, server.arg("plain"));
     if (!err)
@@ -475,6 +557,8 @@ void handleHeartbeat()
   doc["id"] = DEVICE_ID;
   doc["claimed"] = deviceState.claimed;
   doc["uptime_s"] = millis() / 1000;
+  doc["free_heap"] = ESP.getFreeHeap();
+  doc["rssi"] = WiFi.RSSI();
 
   JsonObject relays = doc["relays"].to<JsonObject>();
   relays["1"] = r1State;
@@ -482,7 +566,7 @@ void handleHeartbeat()
 
   String output;
   serializeJson(doc, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // GET /api/info
@@ -502,7 +586,7 @@ void handleInfo()
 
   String output;
   serializeJson(doc, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // GET /api/wifi/status (Compatibility endpoint)
@@ -518,7 +602,7 @@ void handleWifiStatus()
 
   String output;
   serializeJson(doc, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // POST /api/claim
@@ -526,13 +610,19 @@ void handleClaim()
 {
   if (deviceState.claimed)
   {
-    server.send(409, "application/json", "{\"error\":\"Device already claimed\"}");
+    sendResponse(409, "application/json", "{\"error\":\"Device already claimed\"}");
     return;
   }
 
   if (!server.hasArg("plain"))
   {
-    server.send(400, "application/json", "{\"error\":\"Request body required\"}");
+    sendResponse(400, "application/json", "{\"error\":\"Request body required\"}");
+    return;
+  }
+
+  if (server.arg("plain").length() > MAX_PAYLOAD_SIZE)
+  {
+    sendResponse(413, "application/json", "{\"error\":\"Payload too large (max 1KB)\"}");
     return;
   }
 
@@ -540,7 +630,7 @@ void handleClaim()
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err)
   {
-    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    sendResponse(400, "application/json", "{\"error\":\"Invalid JSON\"}");
     return;
   }
 
@@ -549,7 +639,7 @@ void handleClaim()
 
   if (!pop || strlen(pop) == 0)
   {
-    server.send(400, "application/json", "{\"error\":\"Field 'pop' is required\"}");
+    sendResponse(400, "application/json", "{\"error\":\"Field 'pop' is required\"}");
     return;
   }
 
@@ -557,17 +647,17 @@ void handleClaim()
   {
     Serial.println(F("Claim rejected: Invalid PoP secret."));
     showToast("CLAIM REJECTED", 2000);
-    server.send(403, "application/json", "{\"error\":\"Invalid Proof of Possession (PoP)\"}");
+    sendResponse(403, "application/json", "{\"error\":\"Invalid Proof of Possession (PoP)\"}");
     return;
   }
 
   if (!masterToken || strlen(masterToken) == 0)
   {
-    server.send(400, "application/json", "{\"error\":\"Field 'master_token' is required\"}");
+    sendResponse(400, "application/json", "{\"error\":\"Field 'master_token' is required\"}");
     return;
   }
 
-  // Save to persistent storage
+  // Save to persistent storage with checksum
   deviceState.magic = EEPROM_MAGIC;
   deviceState.claimed = true;
   strncpy(deviceState.masterToken, masterToken, sizeof(deviceState.masterToken) - 1);
@@ -580,7 +670,7 @@ void handleClaim()
   showToast("CLAIM SUCCESS!", 3000);
   Serial.println(F("Device successfully claimed!"));
 
-  server.send(200, "application/json", "{\"status\":\"claimed\",\"message\":\"Device successfully claimed\"}");
+  sendResponse(200, "application/json", "{\"status\":\"claimed\",\"message\":\"Device successfully claimed\"}");
 }
 
 // POST / GET /api/verify
@@ -588,17 +678,22 @@ void handleVerify()
 {
   if (!deviceState.claimed)
   {
-    server.send(401, "application/json", "{\"error\":\"Device unclaimed\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Device unclaimed\"}");
     return;
   }
 
   if (isAuthorized())
   {
-    server.send(200, "application/json", "{\"verified\":true,\"id\":\"RELAY_8266_NODE\"}");
+    JsonDocument doc;
+    doc["verified"] = true;
+    doc["id"] = DEVICE_ID;
+    String output;
+    serializeJson(doc, output);
+    sendResponse(200, "application/json", output);
   }
   else
   {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\",\"verified\":false}");
+    sendResponse(401, "application/json", "{\"error\":\"Unauthorized\",\"verified\":false}");
   }
 }
 
@@ -607,12 +702,12 @@ void handleRelayGet()
 {
   if (!deviceState.claimed)
   {
-    server.send(401, "application/json", "{\"error\":\"Device unclaimed\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Device unclaimed\"}");
     return;
   }
   if (!isAuthorized())
   {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Unauthorized\"}");
     return;
   }
 
@@ -623,7 +718,7 @@ void handleRelayGet()
 
   String output;
   serializeJson(doc, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // POST /api/relay
@@ -631,19 +726,25 @@ void handleRelayPost()
 {
   if (!deviceState.claimed)
   {
-    server.send(401, "application/json", "{\"error\":\"Device unclaimed. Claim device first.\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Device unclaimed. Claim device first.\"}");
     return;
   }
 
   if (!isAuthorized())
   {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized: invalid or missing master_token\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Unauthorized: invalid or missing master_token\"}");
     return;
   }
 
   if (!server.hasArg("plain"))
   {
-    server.send(400, "application/json", "{\"error\":\"Request body required\"}");
+    sendResponse(400, "application/json", "{\"error\":\"Request body required\"}");
+    return;
+  }
+
+  if (server.arg("plain").length() > MAX_PAYLOAD_SIZE)
+  {
+    sendResponse(413, "application/json", "{\"error\":\"Payload too large (max 1KB)\"}");
     return;
   }
 
@@ -651,7 +752,7 @@ void handleRelayPost()
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err)
   {
-    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    sendResponse(400, "application/json", "{\"error\":\"Invalid JSON\"}");
     return;
   }
 
@@ -716,8 +817,8 @@ void handleRelayPost()
 
   if (!modified)
   {
-    server.send(400, "application/json",
-                "{\"error\":\"Provide 'relay' and 'state', 'all', or 'relay1'/'relay2'\"}");
+    sendResponse(400, "application/json",
+                 "{\"error\":\"Provide 'relay' and 'state', 'all', or 'relay1'/'relay2'\"}");
     return;
   }
 
@@ -731,7 +832,7 @@ void handleRelayPost()
 
   String output;
   serializeJson(resp, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // POST /api/relay/1
@@ -739,18 +840,23 @@ void handleRelay1Post()
 {
   if (!deviceState.claimed)
   {
-    server.send(401, "application/json", "{\"error\":\"Device unclaimed\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Device unclaimed\"}");
     return;
   }
   if (!isAuthorized())
   {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Unauthorized\"}");
     return;
   }
 
   bool st = !r1State; // default toggle if no body
   if (server.hasArg("plain"))
   {
+    if (server.arg("plain").length() > MAX_PAYLOAD_SIZE)
+    {
+      sendResponse(413, "application/json", "{\"error\":\"Payload too large\"}");
+      return;
+    }
     JsonDocument doc;
     if (!deserializeJson(doc, server.arg("plain")) && doc["state"].is<bool>())
     {
@@ -768,7 +874,7 @@ void handleRelay1Post()
 
   String output;
   serializeJson(resp, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // POST /api/relay/2
@@ -776,18 +882,23 @@ void handleRelay2Post()
 {
   if (!deviceState.claimed)
   {
-    server.send(401, "application/json", "{\"error\":\"Device unclaimed\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Device unclaimed\"}");
     return;
   }
   if (!isAuthorized())
   {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Unauthorized\"}");
     return;
   }
 
   bool st = !r2State;
   if (server.hasArg("plain"))
   {
+    if (server.arg("plain").length() > MAX_PAYLOAD_SIZE)
+    {
+      sendResponse(413, "application/json", "{\"error\":\"Payload too large\"}");
+      return;
+    }
     JsonDocument doc;
     if (!deserializeJson(doc, server.arg("plain")) && doc["state"].is<bool>())
     {
@@ -805,7 +916,7 @@ void handleRelay2Post()
 
   String output;
   serializeJson(resp, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // POST /api/relay/all
@@ -813,18 +924,23 @@ void handleRelayAllPost()
 {
   if (!deviceState.claimed)
   {
-    server.send(401, "application/json", "{\"error\":\"Device unclaimed\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Device unclaimed\"}");
     return;
   }
   if (!isAuthorized())
   {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    sendResponse(401, "application/json", "{\"error\":\"Unauthorized\"}");
     return;
   }
 
   bool st = true;
   if (server.hasArg("plain"))
   {
+    if (server.arg("plain").length() > MAX_PAYLOAD_SIZE)
+    {
+      sendResponse(413, "application/json", "{\"error\":\"Payload too large\"}");
+      return;
+    }
     JsonDocument doc;
     if (!deserializeJson(doc, server.arg("plain")) && doc["state"].is<bool>())
     {
@@ -842,7 +958,7 @@ void handleRelayAllPost()
 
   String output;
   serializeJson(resp, output);
-  server.send(200, "application/json", output);
+  sendResponse(200, "application/json", output);
 }
 
 // POST /api/unclaim or POST /api/reset
@@ -857,25 +973,28 @@ void handleUnclaim()
 
   if (!allowed && server.hasArg("plain"))
   {
-    JsonDocument doc;
-    if (!deserializeJson(doc, server.arg("plain")))
+    if (server.arg("plain").length() <= MAX_PAYLOAD_SIZE)
     {
-      const char *pop = doc["pop"];
-      if (pop && strcmp(pop, POP_SECRET) == 0)
+      JsonDocument doc;
+      if (!deserializeJson(doc, server.arg("plain")))
       {
-        allowed = true;
+        const char *pop = doc["pop"];
+        if (pop && strcmp(pop, POP_SECRET) == 0)
+        {
+          allowed = true;
+        }
       }
     }
   }
 
   if (!allowed)
   {
-    server.send(401, "application/json",
-                "{\"error\":\"Provide valid master_token or pop to unclaim\"}");
+    sendResponse(401, "application/json",
+                 "{\"error\":\"Provide valid master_token or pop to unclaim\"}");
     return;
   }
 
-  // Reset EEPROM
+  // Reset EEPROM with fresh checksum
   deviceState.magic = EEPROM_MAGIC;
   deviceState.claimed = false;
   memset(deviceState.masterToken, 0, sizeof(deviceState.masterToken));
@@ -885,12 +1004,17 @@ void handleUnclaim()
   updateMDNSTXT();
 
   Serial.println(F("Device reverted to factory UNCLAIMED state."));
-  server.send(200, "application/json",
-              "{\"status\":\"unclaimed\",\"message\":\"Device reverted to factory unclaimed state\"}");
+  sendResponse(200, "application/json",
+               "{\"status\":\"unclaimed\",\"message\":\"Device reverted to factory unclaimed state\"}");
 }
 
-// 404 handler
+// 404 handler with universal CORS OPTIONS support
 void handleNotFound()
 {
-  server.send(404, "application/json", "{\"error\":\"Endpoint not found\"}");
+  if (server.method() == HTTP_OPTIONS)
+  {
+    handleOptions();
+    return;
+  }
+  sendResponse(404, "application/json", "{\"error\":\"Endpoint not found\"}");
 }
