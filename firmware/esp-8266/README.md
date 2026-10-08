@@ -73,6 +73,7 @@ To prevent rogue devices on the same local network from taking control of unclai
 ### Physical QR Code Payload
 Each physical hardware unit has a unique QR code sticker printed with the following JSON schema:
 
+#### Formatted JSON
 ```json
 {
   "type": "node",
@@ -82,9 +83,78 @@ Each physical hardware unit has a unique QR code sticker printed with the follow
 }
 ```
 
+#### Exact Raw String to Print on QR Code Sticker
+Use the minified string below when generating your QR code. Minified JSON creates a lower-density, faster-to-scan QR code:
+```text
+{"type":"node","id":"RELAY_8266_NODE","pop":"NODE_SEC_4102","transport":"lan"}
+```
+
 * **`id`**: Hardware identifier of this device (`RELAY_8266_NODE`).
 * **`pop`**: Secret cryptographic factory key stored in device flash (`NODE_SEC_4102`).
 * **`transport`**: Network medium (`lan` for Wi-Fi multicast; future ESP32 variants use `ble`).
+
+#### QR Code Printing Specifications
+* **Recommended Dimensions**: 15 mm × 15 mm up to 25 mm × 25 mm.
+* **Error Correction Level**: **Level M (15%)** or **Level Q (25%)** (ensures readability even with minor scratches on the sticker).
+* **CLI Command to Generate Sticker (using `qrencode`)**:
+  ```bash
+  qrencode -o smart_switch_qr.png -s 8 -l M '{"type":"node","id":"RELAY_8266_NODE","pop":"NODE_SEC_4102","transport":"lan"}'
+  ```
+
+---
+
+### Master Token Generation Guide
+
+The `master_token` is an application-level secret token created by your mobile app or cloud backend when claiming the socket. Once saved during the PoP handshake, this token acts as the pre-shared Bearer credential required to authenticate all future relay commands.
+
+#### Token Requirements & Constraints
+* **Length**: 16 to 64 characters (firmware buffer supports up to **64 ASCII characters** + null terminator).
+* **Character Set**: Alphanumeric characters (`[a-zA-Z0-9]`), hex, or URL-safe base64.
+* **Entropy**: Use a cryptographically secure pseudo-random number generator (CSPRNG) producing 256 bits (32 bytes) of entropy represented as a 64-character hexadecimal string.
+
+#### Code Snippets to Generate a Valid `master_token`
+
+##### 1. Android / Kotlin (Recommended for `client/` app)
+```kotlin
+import java.security.SecureRandom
+
+fun generateMasterToken(): String {
+    val randomBytes = ByteArray(32) // 256 bits of entropy
+    SecureRandom().nextBytes(randomBytes)
+    return randomBytes.joinToString("") { "%02x".format(it) }
+}
+// Example output: "3f8b7c2a1e4d9f0a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a"
+```
+
+##### 2. Command Line / Terminal (OpenSSL)
+```bash
+openssl rand -hex 32
+# Output: e.g. 7d8f3b2a5c1e9a4f6d8b2e1c3a5f7d9b0a2e4c6f8b1d3a5e7c9f0b2d4a6e8c1f
+```
+
+##### 3. Node.js / TypeScript
+```javascript
+const crypto = require('crypto');
+
+function generateMasterToken() {
+    return crypto.randomBytes(32).toString('hex');
+}
+```
+
+##### 4. Python
+```python
+import secrets
+
+master_token = secrets.token_hex(32)
+# Output: 64-character hex string
+```
+
+#### How the Client App Uses the Token
+1. **At Claim Time**: The app generates `master_token`, sends it in `POST /api/claim` along with `pop`, and securely saves it in Android `EncryptedSharedPreferences` / iOS Keychain.
+2. **At Control Time**: The app attaches the token to every relay request via the `Authorization` header:
+   ```http
+   Authorization: Bearer <saved_master_token>
+   ```
 
 ### Three-State Security Lock
 
