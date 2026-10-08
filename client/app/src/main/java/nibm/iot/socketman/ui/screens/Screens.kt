@@ -5,6 +5,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -105,7 +111,12 @@ fun ConnectionScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Text(text = "⚡", fontSize = 64.sp)
+        Icon(
+            imageVector = Icons.Default.Bolt,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "SocketMan",
@@ -136,7 +147,7 @@ fun ConnectionScreen(
                 if (isScanning) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("🔄", fontSize = 20.sp)
+                    Icon(Icons.Default.Refresh, contentDescription = "Scan")
                 }
             }
         }
@@ -164,7 +175,12 @@ fun ConnectionScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🔌", fontSize = 24.sp)
+                            Icon(
+                                imageVector = Icons.Default.Power,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
@@ -218,7 +234,12 @@ fun MonitoringScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("✅", fontSize = 24.sp)
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = info.ssid,
@@ -227,7 +248,7 @@ fun MonitoringScreen(
                 )
             }
             IconButton(onClick = onDisconnect) {
-                Text("❌", fontSize = 24.sp)
+                Icon(Icons.Default.Close, contentDescription = "Disconnect")
             }
         }
 

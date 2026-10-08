@@ -6,6 +6,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -91,7 +98,7 @@ fun DeviceControlScreen(
                 viewModel.clearSelectedDevice()
                 onNavigateBack()
             }) {
-                Text("←", fontSize = 24.sp)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -109,7 +116,7 @@ fun DeviceControlScreen(
             }
 
             IconButton(onClick = { showResetDialog = true }) {
-                Text("🗑️", fontSize = 20.sp)
+                Icon(Icons.Default.Delete, contentDescription = "Unclaim Device", tint = MaterialTheme.colorScheme.error)
             }
         }
 
@@ -156,14 +163,25 @@ fun DeviceControlScreen(
                         if (isVerifyingToken) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                         } else {
-                            Text(
-                                text = when (tokenVerifiedStatus) {
-                                    true -> "Token: Valid ✅"
-                                    false -> "Token: Invalid ❌"
-                                    null -> "Verify Token"
-                                },
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                            when (tokenVerifiedStatus) {
+                                true -> {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Token Valid", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                false -> {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Cancel, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Token Invalid", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                null -> {
+                                    Text("Verify Token", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
                     }
                 }
@@ -254,6 +272,8 @@ fun DeviceControlScreen(
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().height(48.dp)
         ) {
+            Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Unclaim & Factory Reset Device")
         }
 
@@ -283,7 +303,12 @@ fun SwitchControlCard(
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (isOn) "🟢" else "⚪", fontSize = 16.sp)
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = null,
+                        tint = if (isOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Switch $channelNumber",
