@@ -7,7 +7,7 @@ const float CURRENT_NOISE_FLOOR = 0.04; // 40mA gate
 
 // Unified Device Identity - Static constant for physical QR label printing & BLE provisioning
 // Change here if printing a different device code on your enclosure
-const char *DEVICE_ID = "PROV_A1B2C3";
+const char *DEVICE_ID = "RELAY_32S_NODE";
 const char *POP_SECRET = "S3_SEC_9821";
 const char *TRANSPORT = "ble";
 const int SWITCH_COUNT = 1;
