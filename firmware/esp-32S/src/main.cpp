@@ -44,6 +44,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1115 ads;
 
 // ======================== CORE 1: POWER SAMPLING TASK ========================
+// ======================== CORE 1: POWER SAMPLING TASK ========================
 void powerSamplingTask(void *pvParameters) {
   const int SAMPLES = 100; // ~250ms window
   float filteredVRMS = 230.0;
@@ -56,17 +57,17 @@ void powerSamplingTask(void *pvParameters) {
     float rawI[SAMPLES];
 
     // --- Step 1: Burst Sample Waveforms ---
-    for (int i = 0; i < SAMPLES; i++) {
+    for (int idx = 0; idx < SAMPLES; idx++) {
       int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage
       int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current
 
-      float v = ads.computeVolts(adc1);
-      float i = ads.computeVolts(adc0);
+      float vVolts = ads.computeVolts(adc1);
+      float iVolts = ads.computeVolts(adc0);
 
-      rawV[i] = v;
-      rawI[i] = i;
-      sumV += v;
-      sumI += i;
+      rawV[idx] = vVolts;
+      rawI[idx] = iVolts;
+      sumV += vVolts;
+      sumI += iVolts;
     }
 
     // Dynamic DC bias offsets
@@ -78,9 +79,9 @@ void powerSamplingTask(void *pvParameters) {
     float sumSqI = 0.0;
     float sumP   = 0.0;
 
-    for (int i = 0; i < SAMPLES; i++) {
-      float instV = (rawV[i] - vOffset) * V_CAL;
-      float instI = (rawI[i] - iOffset) * I_CAL;
+    for (int idx = 0; idx < SAMPLES; idx++) {
+      float instV = (rawV[idx] - vOffset) * V_CAL;
+      float instI = (rawI[idx] - iOffset) * I_CAL;
 
       sumSqV += (instV * instV);
       sumSqI += (instI * instI);
@@ -98,9 +99,7 @@ void powerSamplingTask(void *pvParameters) {
     // Calculate Apparent Power (VA)
     float currentVA = currentVRMS * currentIRMS;
 
-    // Real Active Power:
-    // For domestic resistive loads and appliances, Active Power tracks VA closely.
-    // If current is present, clamp power to apparent power to avoid sequential phase lag drop.
+    // Real Active Power calculation for display
     float currentP = (currentVA > 0.0) ? (currentVA * 0.985) : 0.0;
 
     // --- Step 3: Low-Pass Filter (Smooth Display Jitter) ---
