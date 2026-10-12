@@ -136,14 +136,14 @@ void powerSamplingTask(void *pvParameters) {
 void renderDisplay(const TelemetryData &d) {
   display.clearDisplay();
 
-  // Top Status Bar (Inverted header)
+  // Top Status Bar (Inverted header: "SMART PLUG" and "RLY: ON/OFF" fit cleanly on 1 line)
   display.fillRect(0, 0, SCREEN_WIDTH, 12, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(3, 2);
   display.print(F("SMART PLUG"));
-  display.setCursor(72, 2);
-  display.print(d.relayEngaged ? F("[RELAY ON]") : F("[RLY OFF]"));
+  display.setCursor(76, 2);
+  display.print(d.relayEngaged ? F("RLY: ON") : F("RLY: OFF"));
 
   display.setTextColor(SSD1306_WHITE);
 
@@ -172,12 +172,12 @@ void renderDisplay(const TelemetryData &d) {
   display.setCursor(2, 54);
   display.print(F("PF:"));
   display.print(d.powerFactor, 2);
-  display.setCursor(56, 54);
+  display.setCursor(50, 54);
   display.print(F("VA:"));
   display.print(d.apparentPower, 0);
 
   // Core Indicator
-  display.setCursor(102, 54);
+  display.setCursor(96, 54);
   display.print(F("C1|C0"));
 
   display.display();
@@ -186,7 +186,7 @@ void renderDisplay(const TelemetryData &d) {
 // ======================== CORE 0: SETUP & DISPATCH ========================
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(100); // Rail stabilization
   Serial.println(F("\n=========================================="));
   Serial.println(F(" ESP32 DUAL-CORE SMART PLUG TELEMETRY     "));
   Serial.println(F("=========================================="));
@@ -202,6 +202,10 @@ void setup() {
     Serial.println(F("[ERROR] SSD1306 not found at 0x3C!"));
     while (1) delay(500);
   }
+
+  // Instantly clear startup hardware RAM static noise
+  display.clearDisplay();
+  display.display();
 
   // 3. ADS1115 Init
   if (!ads.begin(ADS_I2C_ADDR)) {
