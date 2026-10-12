@@ -84,6 +84,11 @@ smart-wall-socket/
 │       ├── src/                      # Config.cpp, main.cpp
 │       ├── platformio.ini            # PlatformIO NodeMCU config
 │       └── README.md                 # Full ESP-8266 Technical Specification
+├── pop-gen/                          # Web PoP QR Code & Sticker Generator (GitHub Pages)
+│   ├── index.html                    # Client-side web app
+│   ├── css/                          # Modern dark glassmorphism & print styles
+│   ├── js/                           # Zero-dependency QR engine & badge compositor
+│   └── README.md                     # Deployment & thermal printing guide
 ├── docs/                             # Documentation, diagrams, and project PDFs
 └── .github/workflows/               # GitHub Actions CI/CD (automated APK builds)
 ```
@@ -93,6 +98,10 @@ smart-wall-socket/
 ## 🔐 Security Architecture: Proof of Possession (PoP)
 
 Both hardware nodes enforce a **Proof of Possession (PoP)** security handshake. Unclaimed sockets accept energy polling and discovery, but strictly reject relay control requests (`401 Unauthorized`) until paired by physically scanning the device's unique QR code.
+
+> [!TIP]
+> **PoP QR & Sticker Generator Web App**: Generate, customize, and print high-resolution physical pairing stickers using the included web tool in [`pop-gen/`](pop-gen/) or directly through [GitHub Pages](https://danushka-madushan.github.io/smart-wall-socket/pop-gen/).
+
 
 ### Compact Semicolon QR Standard
 

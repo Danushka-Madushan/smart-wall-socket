@@ -10,6 +10,10 @@
 		{
 			"name": "esp-32S",
 			"path": "firmware/esp-32S"
+		},
+		{
+			"name": "pop-gen",
+			"path": "pop-gen"
 		}
 	],
 	"settings": {}

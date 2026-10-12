@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Wall Socket — Proof of Possession (PoP) QR Generator</title>
+  <meta name="description" content="Generate, customize, and export high-resolution QR pairing stickers for ESP32-S and ESP8266 smart wall sockets.">
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="bg-glow"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <img src="assets/icon.svg" alt="Smart Wall Socket Logo" class="brand-icon">
+        <div>
+          <h1 class="brand-title">Smart Wall Socket</h1>
+          <p class="brand-tag">Proof of Possession (PoP) QR & Sticker Generator</p>
+        </div>
+      </div>
+      <div class="header-links">
+        <a href="https://github.com/Danushka-Madushan/smart-wall-socket" target="_blank" rel="noopener noreferrer" class="btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          Repository
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Grid -->
+  <main class="main-content">
+    <div class="app-grid">
+
+      <!-- Left Column: Controls & Configuration -->
+      <section class="panel config-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+            </svg>
+            Device Configuration
+          </h2>
+          <p class="panel-subtitle">Select a hardware preset or configure custom pairing parameters.</p>
+        </div>
+
+        <!-- Hardware Presets -->
+        <div class="presets-group">
+          <span class="group-label">Hardware Presets</span>
+          <div class="presets-grid">
+            <button type="button" class="preset-btn active" data-preset="esp32s">
+              <span class="preset-name">⚡ ESP32-S Node</span>
+              <span class="preset-desc">Energy Socket • BLE</span>
+            </button>
+            <button type="button" class="preset-btn" data-preset="esp8266">
+              <span class="preset-name">🔌 ESP8266 Switch</span>
+              <span class="preset-desc">2-Channel • LAN</span>
+            </button>
+            <button type="button" class="preset-btn" data-preset="custom">
+              <span class="preset-name">⚙️ Custom Node</span>
+              <span class="preset-desc">User-Defined Parameters</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Protocol Output Formats -->
+        <div class="form-group">
+          <span class="group-label">QR Payload Encoding Format</span>
+          <div class="tabs-bar">
+            <button type="button" class="tab-btn active" data-format="compact">
+              Compact (v1;...)
+            </button>
+            <button type="button" class="tab-btn" data-format="json">
+              Minified JSON
+            </button>
+            <button type="button" class="tab-btn" data-format="raw">
+              Raw PoP Secret
+            </button>
+          </div>
+        </div>
+
+        <!-- Input Parameters Form -->
+        <div class="form-section">
+          <!-- Device ID -->
+          <div class="form-group">
+            <div class="input-label-row">
+              <label for="deviceIdInput" class="form-label">Device Identifier (ID)</label>
+              <span class="field-hint">e.g. RELAY_32S_NODE</span>
+            </div>
+            <input type="text" id="deviceIdInput" class="text-input mono" placeholder="RELAY_32S_NODE" value="RELAY_32S_NODE" spellcheck="false">
+          </div>
+
+          <!-- PoP Secret PIN -->
+          <div class="form-group">
+            <div class="input-label-row">
+              <label for="popPinInput" class="form-label">Proof of Possession (PoP PIN)</label>
+              <span class="field-hint">Factory Authorization Secret</span>
+            </div>
+            <div class="input-wrapper">
+              <input type="text" id="popPinInput" class="text-input mono" placeholder="S3_SEC_9821" value="S3_SEC_9821" spellcheck="false">
+              <button type="button" id="randomPinBtn" class="action-btn-inline" title="Generate Random PIN">
+                🎲 Random
+              </button>
+            </div>
+          </div>
+
+          <!-- Transport Protocol -->
+          <div class="form-group">
+            <div class="input-label-row">
+              <label for="transportInput" class="form-label">Provisioning Transport</label>
+              <span class="field-hint">Hardware Connection Layer</span>
+            </div>
+            <select id="transportInput" class="select-input">
+              <option value="ble">Bluetooth Low Energy (ble) — Recommended for ESP32</option>
+              <option value="lan">Local Wi-Fi Network (lan) — ESP8266 & ESP32</option>
+              <option value="softap">Device Access Point (softap)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- QR Code Customization Options -->
+        <details class="form-group">
+          <summary class="group-label" style="cursor: pointer; user-select: none;">
+            ⚙️ Advanced QR Customization (Colors & ECC)
+          </summary>
+          <div class="custom-options-grid">
+            <div class="form-group">
+              <label for="eccSelect" class="form-label">Error Correction Level</label>
+              <select id="eccSelect" class="select-input">
+                <option value="L">Level L (7% recovery)</option>
+                <option value="M" selected>Level M (15% recovery) — Standard</option>
+                <option value="Q">Level Q (25% recovery)</option>
+                <option value="H">Level H (30% recovery) — Best for stickers</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Quiet Zone Margin (<span id="marginVal">2</span> modules)</label>
+              <input type="range" id="marginInput" min="0" max="4" value="2" step="1" style="width: 100%; accent-color: var(--accent-emerald);">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">QR Pattern Color</label>
+              <div class="color-picker-row">
+                <input type="color" id="darkColorInput" class="color-input" value="#000000">
+                <span class="field-hint">High-contrast dark recommended</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Background Color</label>
+              <div class="color-picker-row">
+                <input type="color" id="lightColorInput" class="color-input" value="#ffffff">
+                <span class="field-hint">Pure white for paper/stickers</span>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Right Column: Live Interactive Preview & Export -->
+      <section class="panel preview-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            Printable Sticker Preview
+          </h2>
+          <p class="panel-subtitle">Live mockup of the adhesive pairing label.</p>
+        </div>
+
+        <!-- Decoded Payload Inspector -->
+        <div class="payload-box">
+          <span id="payloadDisplay">v1;RELAY_32S_NODE;S3_SEC_9821;ble</span>
+          <button type="button" id="copyPayloadBtn" class="copy-mini-btn" title="Copy raw payload string">
+            📋
+          </button>
+        </div>
+
+        <!-- Visual Sticker Mockup Card -->
+        <div class="sticker-preview-wrapper">
+          <div class="sticker-card" id="stickerCard">
+            <div class="sticker-header">
+              <img src="assets/icon.svg" alt="Logo" class="sticker-logo">
+              <div class="sticker-title">SMART WALL SOCKET</div>
+            </div>
+
+            <div class="qr-canvas-holder">
+              <canvas id="qrCanvas" width="220" height="220"></canvas>
+            </div>
+
+            <div class="sticker-meta">
+              <div class="sticker-id" id="stickerId">RELAY_32S_NODE</div>
+              <div class="sticker-pin" id="stickerPin">PIN: S3_SEC_9821</div>
+              <span class="sticker-badge-tag" id="stickerTag">BLUETOOTH (BLE)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export Actions Toolbar -->
+        <div class="export-toolbar">
+          <button type="button" id="downloadBadgeBtn" class="btn-primary" title="Download production sticker with labels and logo">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Sticker Badge (PNG)
+          </button>
+
+          <button type="button" id="downloadPngBtn" class="btn-action">
+            💾 QR Only (600px)
+          </button>
+
+          <button type="button" id="downloadHighResPngBtn" class="btn-action">
+            🖼️ QR Only (1200px)
+          </button>
+
+          <button type="button" id="downloadSvgBtn" class="btn-action">
+            📐 Vector SVG
+          </button>
+
+          <button type="button" id="copyBadgeBtn" class="btn-action">
+            📋 Copy to Clipboard
+          </button>
+
+          <button type="button" id="printBadgeBtn" class="btn-action" style="grid-column: 1 / -1; border-color: var(--accent-emerald); color: var(--accent-emerald);">
+            🖨️ Print Label Sticker (Thermal / Paper)
+          </button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Toast Notification Feedback -->
+  <aside id="toast" class="toast" role="status" aria-live="polite">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-emerald)" stroke-width="2.5">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    <span id="toastMessage">Action completed!</span>
+  </aside>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <p>Smart Wall Socket IoT Ecosystem • Built for ESP32-S & ESP8266 Hardware Nodes • <a href="https://github.com/Danushka-Madushan/smart-wall-socket" target="_blank" rel="noopener noreferrer">GitHub Repository</a></p>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/qrcode.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
