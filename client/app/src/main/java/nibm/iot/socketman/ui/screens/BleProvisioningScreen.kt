@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,7 +18,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import nibm.iot.socketman.data.BleDiscoveredDevice
 import nibm.iot.socketman.viewmodel.MdnsSwitchViewModel
@@ -35,6 +36,7 @@ fun BleProvisioningScreen(
     var popPinInput by remember { mutableStateOf("S3_SEC_9821") }
     var wifiSsidInput by remember { mutableStateOf("") }
     var wifiPassInput by remember { mutableStateOf("") }
+    var ipOverrideInput by remember { mutableStateOf("") }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -69,7 +71,7 @@ fun BleProvisioningScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onNavigateBack) {
-                Text("←", fontSize = 24.sp)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
 
             Text(
@@ -169,6 +171,17 @@ fun BleProvisioningScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = ipOverrideInput,
+            onValueChange = { ipOverrideInput = it },
+            label = { Text("Socket IP (Optional / Auto-Detect)") },
+            placeholder = { Text("e.g. 192.168.1.120") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
         viewModel.provisioningStatusText?.let { status ->
             Spacer(modifier = Modifier.height(12.dp))
             Text(
@@ -188,7 +201,7 @@ fun BleProvisioningScreen(
                     popPin = popPinInput.trim(),
                     ssid = wifiSsidInput.trim(),
                     pass = wifiPassInput.trim(),
-                    targetIpOverride = null
+                    targetIpOverride = ipOverrideInput.trim().ifBlank { null }
                 ) { success, msg ->
                     Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                     if (success) {

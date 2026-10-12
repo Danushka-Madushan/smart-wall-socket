@@ -25,8 +25,13 @@ void setup() {
   DisplayManager::init();
   DisplayManager::showSplash();
 
-  // 3. Initialize Persistent NVS Storage
+  // 3. Initialize Persistent NVS Storage & Check Quick Power-Cycle Reset
   StorageManager::init();
+  if (StorageManager::isQuickPowerCycleResetTriggered()) {
+    Serial.println(F("[RESET] 3 quick power-cycles detected! Factory resetting to BLE pairing mode..."));
+    StorageManager::reset();
+    NetworkManager::resetProvisioning();
+  }
 
   // 4. Initialize Core 1 Power Sampling (ADS1115 True-RMS Task)
   if (!PowerMonitor::init()) {
@@ -75,6 +80,9 @@ void loop() {
       NetworkManager::resetProvisioning();
     }
   }
+
+  // 5. Clear quick power-cycle reset counter after 8s continuous uptime
+  StorageManager::clearQuickPowerCycle();
 
   // Yield to FreeRTOS Core 0 IDLE task
   delay(10);

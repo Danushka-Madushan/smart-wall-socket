@@ -10,6 +10,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Lan
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import nibm.iot.socketman.data.BleDiscoveredDevice
 import nibm.iot.socketman.data.MdnsDevice
@@ -98,7 +105,7 @@ fun AddDeviceHubScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onNavigateBack) {
-                Text("←", fontSize = 24.sp)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
 
             Text(
@@ -125,7 +132,7 @@ fun AddDeviceHubScreen(
                 if ((selectedTab == 0 && isMdnsDiscovering) || (selectedTab == 1 && isBleScanning)) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("🔄", fontSize = 20.sp)
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -141,12 +148,24 @@ fun AddDeviceHubScreen(
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text("🌐 Wi-Fi Network", fontWeight = FontWeight.Bold) }
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Wi-Fi Network", fontWeight = FontWeight.Bold)
+                    }
+                }
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text("📶 Bluetooth Setup", fontWeight = FontWeight.Bold) }
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Bluetooth Setup", fontWeight = FontWeight.Bold)
+                    }
+                }
             )
         }
 
@@ -160,7 +179,12 @@ fun AddDeviceHubScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "🌐", fontSize = 48.sp)
+                        Icon(
+                            imageVector = Icons.Default.Lan,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "No Local Sockets Found",
@@ -200,7 +224,12 @@ fun AddDeviceHubScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(horizontal = 24.dp)
                     ) {
-                        Text(text = "🔒", fontSize = 48.sp)
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Bluetooth Permission Required",
@@ -229,7 +258,12 @@ fun AddDeviceHubScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "📶", fontSize = 48.sp)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.BluetoothSearching,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "No Nearby Sockets Found",

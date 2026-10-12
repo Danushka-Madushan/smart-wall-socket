@@ -17,9 +17,11 @@ public:
   static int32_t getRSSI();
   static String getSSID();
   static String getMAC();
+  static bool isProvisioningActive();
 
 private:
   static bool wasConnected;
   static bool isProvisioning;
+  static unsigned long bootTime;
   static void onSysProvEvent(arduino_event_t *sys_event);
 };

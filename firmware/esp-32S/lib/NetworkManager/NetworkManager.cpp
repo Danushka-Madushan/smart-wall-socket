@@ -5,6 +5,7 @@
 
 bool NetworkManager::wasConnected = false;
 bool NetworkManager::isProvisioning = false;
+unsigned long NetworkManager::bootTime = 0;
 
 void NetworkManager::onSysProvEvent(arduino_event_t *sys_event) {
   switch (sys_event->event_id) {
@@ -89,6 +90,8 @@ void NetworkManager::init() {
   WiFi.setHostname(getDeviceId());
   WiFi.onEvent(onSysProvEvent);
 
+  bootTime = millis();
+
   Serial.println(F("[NETWORK] Initializing WiFiProv BLE subsystem..."));
 
   // Check if provisioned already or start BLE provisioning
@@ -122,9 +125,34 @@ void NetworkManager::update() {
       Serial.print(F("[WIFI] Reconnected! IP: "));
       Serial.println(WiFi.localIP());
       setupMDNS();
+      DisplayManager::setMode(DISP_MODE_OPERATIONAL);
       DisplayManager::showToast("WiFi Connected", 2000);
     } else {
       Serial.println(F("[WIFI] Connection lost. Reconnecting..."));
+    }
+  }
+
+  // Autonomous Wi-Fi Connection Timeout Watchdog (prevents unprovisioned dead-ends)
+  if (!isConnectedNow && !isProvisioning) {
+    unsigned long elapsed = millis() - bootTime;
+
+    // For UNCLAIMED sockets: If cannot connect to stored Wi-Fi within 15 seconds,
+    // credentials in NVS are stale/invalid. Auto-reset to start BLE pairing mode.
+    if (!StorageManager::isClaimed() && elapsed > 15000) {
+      Serial.println(F("[NETWORK] Watchdog: Unclaimed socket cannot reach saved Wi-Fi (15s timeout)."));
+      Serial.println(F("[NETWORK] Wiping stale NVS credentials and falling back to BLE Provisioning mode..."));
+      DisplayManager::showToast("FALLBACK -> BLE", 3000);
+      resetProvisioning();
+      return;
+    }
+
+    // For CLAIMED sockets: Allow up to 60 seconds (covers home router reboot grace period)
+    if (StorageManager::isClaimed() && elapsed > 60000) {
+      Serial.println(F("[NETWORK] Watchdog: Claimed socket cannot reach Wi-Fi for 60s."));
+      Serial.println(F("[NETWORK] Reverting to BLE Provisioning mode for user reconfiguration..."));
+      DisplayManager::showToast("WIFI FAIL -> BLE", 3000);
+      resetProvisioning();
+      return;
     }
   }
 }
@@ -155,4 +183,8 @@ String NetworkManager::getSSID() {
 
 String NetworkManager::getMAC() {
   return WiFi.macAddress();
+}
+
+bool NetworkManager::isProvisioningActive() {
+  return isProvisioning;
 }

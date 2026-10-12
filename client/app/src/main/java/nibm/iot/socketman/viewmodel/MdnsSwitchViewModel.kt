@@ -276,9 +276,14 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
             },
             onComplete = { success, assignedIp, errorMsg ->
                 if (success && assignedIp != null) {
+                    val finalIp = targetIpOverride?.ifBlank { null }
+                        ?: discoveredDevices.value.find {
+                            it.id.equals(deviceName, ignoreCase = true) || it.name.contains("smartsocket", ignoreCase = true)
+                        }?.ip ?: assignedIp
+
                     provisioningStatusText = "BLE Provisioned! Executing PoP Claim..."
                     claimDevice(
-                        ip = assignedIp,
+                        ip = finalIp,
                         pop = popPin,
                         targetDeviceId = deviceName,
                         switches = 1,
@@ -289,7 +294,7 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
                             // If socket was already claimed in previous NVS session, auto reset & reclaim using the validated BLE PoP PIN
                             provisioningStatusText = "Resetting previous session & claiming..."
                             forceReclaimDevice(
-                                ip = assignedIp,
+                                ip = finalIp,
                                 pop = popPin,
                                 targetDeviceId = deviceName,
                                 switches = 1,

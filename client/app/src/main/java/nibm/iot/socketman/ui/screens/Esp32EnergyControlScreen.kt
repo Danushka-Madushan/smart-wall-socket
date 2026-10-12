@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +39,7 @@ fun Esp32EnergyControlScreen(
 
     var showResetDialog by remember { mutableStateOf(false) }
     var isVerifyingToken by remember { mutableStateOf(false) }
+    var tokenVerifiedStatus by remember { mutableStateOf<Boolean?>(null) }
 
     if (device == null) {
         LaunchedEffect(Unit) {
@@ -93,7 +100,7 @@ fun Esp32EnergyControlScreen(
                 viewModel.clearSelectedDevice()
                 onNavigateBack()
             }) {
-                Text("←", fontSize = 24.sp)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -111,7 +118,7 @@ fun Esp32EnergyControlScreen(
             }
 
             IconButton(onClick = { showResetDialog = true }) {
-                Text("🗑️", fontSize = 20.sp)
+                Icon(Icons.Default.Delete, contentDescription = "Reset Socket", tint = MaterialTheme.colorScheme.error)
             }
         }
 
@@ -334,6 +341,7 @@ fun Esp32EnergyControlScreen(
                             isVerifyingToken = true
                             viewModel.verifyCurrentToken { valid ->
                                 isVerifyingToken = false
+                                tokenVerifiedStatus = valid
                                 Toast.makeText(
                                     context,
                                     if (valid) "Bearer Token Verified!" else "Token Rejected",
@@ -347,7 +355,25 @@ fun Esp32EnergyControlScreen(
                         if (isVerifyingToken) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                         } else {
-                            Text("Verify Token", style = MaterialTheme.typography.labelSmall)
+                            when (tokenVerifiedStatus) {
+                                true -> {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Token Valid", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                false -> {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Cancel, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Token Invalid", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                null -> {
+                                    Text("Verify Token", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
                     }
                 }
@@ -399,6 +425,8 @@ fun Esp32EnergyControlScreen(
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().height(48.dp)
         ) {
+            Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Factory Reset Socket")
         }
 
@@ -407,7 +435,7 @@ fun Esp32EnergyControlScreen(
 }
 
 @Composable
-fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
+private fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,

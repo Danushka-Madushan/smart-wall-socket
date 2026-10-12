@@ -4,6 +4,7 @@
 static Preferences prefs;
 bool StorageManager::claimed = false;
 char StorageManager::cachedToken[65] = {0};
+bool StorageManager::quickResetTriggered = false;
 
 void StorageManager::init() {
   prefs.begin("socket", false);
@@ -14,6 +15,22 @@ void StorageManager::init() {
   prefs.end();
 
   Serial.printf("[STORAGE] Status=%s\n", claimed ? "CLAIMED" : "UNCLAIMED");
+
+  // Check 3 quick power-cycles
+  prefs.begin("pwr_cycle", false);
+  int count = prefs.getInt("count", 0);
+  count++;
+  prefs.putInt("count", count);
+  prefs.end();
+
+  Serial.printf("[BOOT] Quick power-cycle count: %d\n", count);
+
+  if (count >= 3) {
+    quickResetTriggered = true;
+    prefs.begin("pwr_cycle", false);
+    prefs.putInt("count", 0);
+    prefs.end();
+  }
 }
 
 bool StorageManager::isClaimed() {
@@ -46,4 +63,18 @@ void StorageManager::reset() {
   prefs.end();
 
   Serial.println(F("[STORAGE] Device reverted to UNCLAIMED (factory reset)"));
+}
+
+bool StorageManager::isQuickPowerCycleResetTriggered() {
+  return quickResetTriggered;
+}
+
+void StorageManager::clearQuickPowerCycle() {
+  static bool cleared = false;
+  if (!cleared && millis() > 8000) {
+    cleared = true;
+    prefs.begin("pwr_cycle", false);
+    prefs.putInt("count", 0);
+    prefs.end();
+  }
 }
