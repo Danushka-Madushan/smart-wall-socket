@@ -5,12 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Power
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,47 +13,28 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import nibm.iot.socketman.data.EnergyData
 import nibm.iot.socketman.viewmodel.AppState
-import nibm.iot.socketman.viewmodel.EnergyData
 import nibm.iot.socketman.viewmodel.SmartDevice
 import nibm.iot.socketman.viewmodel.SocketViewModel
 
 fun calculateCost(units: Double): Double {
-    // Handle 180 units or above
-    if (units >= 180.0) {
-        return (180.0 * 32.50) + ((units - 180.0) * 100.0)
-    }
-
-    // Handle under 180 units with tiered logic
     var cost = 0.0
     var remainingUnits = units
 
-    // First 60 units
     if (remainingUnits > 0) {
         val tier1 = minOf(remainingUnits, 60.0)
         cost += tier1 * 14.0
         remainingUnits -= tier1
     }
-    
-    // Next 30 units (61-90)
     if (remainingUnits > 0) {
         val tier2 = minOf(remainingUnits, 30.0)
         cost += tier2 * 20.0
         remainingUnits -= tier2
     }
-    
-    // Next 30 units (91-120)
     if (remainingUnits > 0) {
-        val tier3 = minOf(remainingUnits, 30.0)
-        cost += tier3 * 28.0
-        remainingUnits -= tier3
+        cost += remainingUnits * 28.0
     }
-    
-    // Remaining units up to 180 (121-179)
-    if (remainingUnits > 0) {
-        cost += remainingUnits * 44.0
-    }
-    
     return cost
 }
 
@@ -98,7 +73,7 @@ fun ConnectionScreen(
     isConnecting: Boolean,
     onScan: () -> Unit,
     onConnect: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     LaunchedEffect(Unit) {
         onScan()
@@ -111,12 +86,7 @@ fun ConnectionScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Icon(
-            imageVector = Icons.Default.Bolt,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+        Text(text = "⚡", fontSize = 64.sp)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "SocketMan",
@@ -147,7 +117,7 @@ fun ConnectionScreen(
                 if (isScanning) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Default.Refresh, contentDescription = "Scan")
+                    Text("🔄", fontSize = 20.sp)
                 }
             }
         }
@@ -175,12 +145,7 @@ fun ConnectionScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Power,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            Text("🔌", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
@@ -219,7 +184,7 @@ fun MonitoringScreen(
     energyData: EnergyData,
     totalUnits: Double,
     onDisconnect: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
@@ -234,12 +199,7 @@ fun MonitoringScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                Text("✅", fontSize = 24.sp)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = info.ssid,
@@ -248,7 +208,7 @@ fun MonitoringScreen(
                 )
             }
             IconButton(onClick = onDisconnect) {
-                Icon(Icons.Default.Close, contentDescription = "Disconnect")
+                Text("❌", fontSize = 24.sp)
             }
         }
 

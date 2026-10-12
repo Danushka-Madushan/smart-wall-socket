@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import nibm.iot.socketman.data.ClaimResponse
 import nibm.iot.socketman.data.DeviceInfoResponse
+import nibm.iot.socketman.data.EnergyData
 import nibm.iot.socketman.data.HeartbeatResponse
 import nibm.iot.socketman.data.WifiStatusResponse
 import org.json.JSONObject
@@ -72,6 +73,22 @@ class SmartSwitchApiClient {
                 mac = json.optString("mac", json.optString("mc", "Unknown")),
                 rssi = json.optInt("rssi", 0),
                 claimed = json.optBoolean("claimed", false),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun getEnergy(ip: String): EnergyData? = withContext(Dispatchers.IO) {
+        try {
+            val json = getRequest("http://$ip/api/energy") ?: return@withContext null
+            EnergyData(
+                voltageV = json.optDouble("voltage_V", 0.0).toFloat(),
+                currentA = json.optDouble("current_A", 0.0).toFloat(),
+                powerW = json.optDouble("power_W", 0.0).toFloat(),
+                apparentVa = json.optDouble("apparent_VA", 0.0).toFloat(),
+                powerFactor = json.optDouble("power_factor", 1.0).toFloat(),
+                relay = json.optBoolean("relay", true),
             )
         } catch (_: Exception) {
             null

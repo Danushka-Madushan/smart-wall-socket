@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import nibm.iot.socketman.data.EnergyData
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -26,12 +27,6 @@ sealed class AppState {
     object Connecting : AppState()
     data class Connected(val ssid: String, val ip: String, val rssi: Int, val mac: String) : AppState()
 }
-
-data class EnergyData(
-    val currentA: Float = 0f,
-    val powerW: Float = 0f,
-    val voltageV: Float = 0f,
-)
 
 data class SmartDevice(val name: String, val ip: String)
 
@@ -79,7 +74,7 @@ class SocketViewModel : ViewModel() {
                     state = AppState.Connected(ssid, ip, rssi, mac)
                     startPolling()
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 withContext(Dispatchers.Main) {
                     state = AppState.Disconnected
                     startScan(context)
@@ -111,7 +106,7 @@ class SocketViewModel : ViewModel() {
                         }
                     }
                 }
-            } catch (ignored: Exception) {}
+            } catch (_: Exception) {}
         }
 
         // 2. mDNS Service Discovery
@@ -119,6 +114,7 @@ class SocketViewModel : ViewModel() {
         discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) {}
 
+            @Suppress("DEPRECATION")
             override fun onServiceFound(service: NsdServiceInfo) {
                 // The device advertises "smartsocket"
                 if (service.serviceName.contains("smartsocket", ignoreCase = true)) {
@@ -143,14 +139,14 @@ class SocketViewModel : ViewModel() {
             override fun onServiceLost(service: NsdServiceInfo) {}
             override fun onDiscoveryStopped(serviceType: String) {}
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                try { nsdManager?.stopServiceDiscovery(this) } catch (ignored: Exception) {}
+                try { nsdManager?.stopServiceDiscovery(this) } catch (_: Exception) {}
             }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
         }
 
         try {
             nsdManager?.discoverServices("_http._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             isScanning = false
             return
         }
@@ -166,7 +162,7 @@ class SocketViewModel : ViewModel() {
         if (!isScanning) return
         try {
             discoveryListener?.let { nsdManager?.stopServiceDiscovery(it) }
-        } catch (ignored: Exception) {}
+        } catch (_: Exception) {}
         discoveryListener = null
         isScanning = false
     }
@@ -194,7 +190,7 @@ class SocketViewModel : ViewModel() {
                     state = AppState.Connected(ssid, ip, rssi, mac)
                     startPolling()
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 withContext(Dispatchers.Main) {
                     disconnect(context, "Failed to connect to device.")
                 }
@@ -225,7 +221,7 @@ class SocketViewModel : ViewModel() {
                         totalUnits += (powerW / 3600000.0)
                         errorCount = 0
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     errorCount++
                     if (errorCount >= 3) {
                         withContext(Dispatchers.Main) {

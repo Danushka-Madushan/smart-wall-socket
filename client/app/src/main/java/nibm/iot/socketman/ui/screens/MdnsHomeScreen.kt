@@ -53,7 +53,7 @@ fun MdnsHomeScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "LAN Nodes (mDNS & PoP)",
+                    text = "Smart Wall Sockets & Nodes",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -88,14 +88,14 @@ fun MdnsHomeScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "No Saved Switches",
+                        text = "No Saved Devices",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Tap '+ Add Device' to discover and claim smart switches on your local network.",
+                        text = "Tap '+ Add Device' to discover local mDNS nodes or provision new ESP32-S energy sockets over BLE.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 32.dp)
@@ -151,14 +151,14 @@ fun SavedDeviceCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = if (device.hasEnergy) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Default.Bolt,
+                                imageVector = if (device.hasEnergy) Icons.Default.Bolt else Icons.Default.Power,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                tint = if (device.hasEnergy) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -172,7 +172,7 @@ fun SavedDeviceCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "IP: ${device.ip}",
+                            text = "IP: ${device.ip} | ${if (device.hasEnergy) "ESP32-S" else "ESP8266"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -202,15 +202,24 @@ fun SavedDeviceCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val sw1On = relays["1"] == true
-                val sw2On = relays["2"] == true
-
-                Text(
-                    text = "SW1: ${if (sw1On) "ON" else "OFF"}   |   SW2: ${if (sw2On) "ON" else "OFF"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (device.hasEnergy) {
+                    val socketOn = relays["1"] == true
+                    Text(
+                        text = "Energy Monitoring  |  Status: ${if (socketOn) "ON" else "OFF"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    val sw1On = relays["1"] == true
+                    val sw2On = relays["2"] == true
+                    Text(
+                        text = "SW1: ${if (sw1On) "ON" else "OFF"}   |   SW2: ${if (sw2On) "ON" else "OFF"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(

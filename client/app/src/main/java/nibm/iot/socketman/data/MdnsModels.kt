@@ -11,11 +11,18 @@ data class MdnsDevice(
     val claimed: Boolean = false,
 )
 
+data class BleDiscoveredDevice(
+    val name: String,
+    val pop: String = "",
+    val address: String = "",
+)
+
 data class QrPayload(
-    val type: String,
+    val version: String = "v1",
+    val type: String = "node",
     val id: String,
     val pop: String,
-    val transport: String,
+    val transport: String = "lan",
 )
 
 data class ClaimRequest(
@@ -57,11 +64,22 @@ data class WifiStatusResponse(
     val claimed: Boolean,
 )
 
+data class EnergyData(
+    val currentA: Float = 0f,
+    val powerW: Float = 0f,
+    val voltageV: Float = 0f,
+    val apparentVa: Float = 0f,
+    val powerFactor: Float = 1.0f,
+    val relay: Boolean = true,
+)
+
 data class SavedDevice(
     val id: String,
     val ip: String,
     val masterToken: String,
     val pop: String,
     val switches: Int = 2,
+    val hasEnergy: Boolean = false,
+    val transport: String = "lan",
     val claimedAt: Long = System.currentTimeMillis(),
 )

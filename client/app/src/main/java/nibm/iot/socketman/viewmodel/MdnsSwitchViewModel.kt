@@ -2,6 +2,7 @@ package nibm.iot.socketman.viewmodel
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -16,14 +17,17 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import nibm.iot.socketman.data.*
+import nibm.iot.socketman.network.BleProvisioningManager
 import nibm.iot.socketman.network.MdnsDiscoveryManager
 import nibm.iot.socketman.network.SmartSwitchApiClient
 import java.security.SecureRandom
+import kotlin.math.min
 import kotlin.time.Duration.Companion.seconds
 
 class MdnsSwitchViewModel(context: Context) : ViewModel() {
     private val storage = DeviceStorage(context)
     private val discoveryManager = MdnsDiscoveryManager(context)
+    private val bleManager = BleProvisioningManager(context)
     private val apiClient = SmartSwitchApiClient()
 
     private val _savedDevices = MutableStateFlow<List<SavedDevice>>(emptyList())
@@ -31,6 +35,9 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
 
     val discoveredDevices: StateFlow<List<MdnsDevice>> = discoveryManager.devices
     val isDiscovering: StateFlow<Boolean> = discoveryManager.isDiscovering
+
+    val bleDiscoveredDevices: StateFlow<List<BleDiscoveredDevice>> = bleManager.discoveredBleDevices
+    val isBleScanning: StateFlow<Boolean> = bleManager.isScanning
 
     var deviceOnlineMap by mutableStateOf<Map<String, Boolean>>(emptyMap())
         private set
@@ -53,10 +60,19 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
     var activeRelayStates by mutableStateOf<Map<String, Boolean>>(emptyMap())
         private set
 
+    var activeEnergyData by mutableStateOf(EnergyData())
+        private set
+
+    var totalUnits by mutableDoubleStateOf(0.0)
+        private set
+
     var isClaiming by mutableStateOf(false)
         private set
 
     var claimErrorMessage by mutableStateOf<String?>(null)
+        private set
+
+    var provisioningStatusText by mutableStateOf<String?>(null)
         private set
 
     private var heartbeatJob: Job? = null
@@ -65,8 +81,7 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
     init {
         loadSavedDevices()
         startHeartbeatPolling()
-        
-        // Auto IP-Recovery listener: Whenever mDNS discovers a device whose IP changed, sync storage
+
         viewModelScope.launch {
             discoveredDevices.collect { discoveredList ->
                 val saved = _savedDevices.value
@@ -97,13 +112,29 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         discoveryManager.stopDiscovery()
     }
 
+    fun startBleScan() {
+        bleManager.startBleScan()
+    }
+
+    fun stopBleScan() {
+        bleManager.stopBleScan()
+    }
+
     fun generateMasterToken(): String {
         val randomBytes = ByteArray(32) // 256 bits of entropy
         SecureRandom().nextBytes(randomBytes)
         return randomBytes.joinToString("") { "%02x".format(it) }
     }
 
-    fun claimDevice(ip: String, pop: String, targetDeviceId: String, onResult: (Boolean, String) -> Unit) {
+    fun claimDevice(
+        ip: String,
+        pop: String,
+        targetDeviceId: String,
+        switches: Int = 2,
+        hasEnergy: Boolean = false,
+        transport: String = "lan",
+        onResult: (Boolean, String) -> Unit
+    ) {
         if (isClaiming) return
         isClaiming = true
         claimErrorMessage = null
@@ -111,16 +142,24 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val generatedToken = generateMasterToken()
             val response = apiClient.claimDevice(ip, pop, generatedToken)
+            val info = if (response.isSuccess) apiClient.getInfo(ip) else null
 
             withContext(Dispatchers.Main) {
                 isClaiming = false
                 if (response.isSuccess) {
+                    val finalSwitches = info?.switches ?: switches
+                    val finalHasEnergy = if (info != null) info.energyMonitoring else hasEnergy
+                    val finalTransport = info?.transport ?: transport
+                    val finalId = if (info != null && info.id.isNotBlank() && info.id != "Unknown") info.id else targetDeviceId
+
                     val newDevice = SavedDevice(
-                        id = targetDeviceId,
+                        id = finalId,
                         ip = ip,
                         masterToken = generatedToken,
                         pop = pop,
-                        switches = 2
+                        switches = finalSwitches,
+                        hasEnergy = finalHasEnergy,
+                        transport = finalTransport
                     )
                     storage.saveDevice(newDevice)
                     loadSavedDevices()
@@ -134,9 +173,53 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         }
     }
 
+    fun provisionAndClaimBleDevice(
+        deviceName: String,
+        popPin: String,
+        ssid: String,
+        pass: String,
+        targetIpOverride: String? = null,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        provisioningStatusText = "Connecting over BLE..."
+        bleManager.provisionDeviceOverBle(
+            deviceName = deviceName,
+            popPin = popPin,
+            ssid = ssid,
+            pass = pass,
+            targetIpOverride = targetIpOverride,
+            scope = viewModelScope,
+            onStatusUpdate = { status ->
+                provisioningStatusText = status
+            },
+            onComplete = { success, assignedIp, errorMsg ->
+                if (success && assignedIp != null) {
+                    provisioningStatusText = "BLE Provisioned! Executing PoP Claim..."
+                    claimDevice(
+                        ip = assignedIp,
+                        pop = popPin,
+                        targetDeviceId = deviceName,
+                        switches = 1,
+                        hasEnergy = true,
+                        transport = "ble"
+                    ) { claimOk, claimMsg ->
+                        provisioningStatusText = null
+                        onResult(claimOk, claimMsg)
+                    }
+                } else {
+                    provisioningStatusText = null
+                    onResult(false, errorMsg ?: "Provisioning failed")
+                }
+            }
+        )
+    }
+
     fun selectDeviceForControl(device: SavedDevice) {
         selectedSavedDevice = device
-        activeRelayStates = emptyMap()
+        val cachedRelays = deviceRelayMap[device.id] ?: emptyMap()
+        activeRelayStates = cachedRelays
+        activeEnergyData = EnergyData(relay = cachedRelays["1"] ?: true)
+        totalUnits = 0.0
         selectedDeviceInfo = null
         selectedWifiStatus = null
         selectedHeartbeat = null
@@ -155,6 +238,9 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
             if (updated != null) {
                 withContext(Dispatchers.Main) {
                     activeRelayStates = updated
+                    if (channel == 1 && device.hasEnergy) {
+                        activeEnergyData = activeEnergyData.copy(relay = updated["1"] ?: targetState)
+                    }
                 }
             }
         }
@@ -195,6 +281,26 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         }
     }
 
+    fun calculateCost(units: Double): Double {
+        var cost = 0.0
+        var remainingUnits = units
+
+        if (remainingUnits > 0) {
+            val tier1 = min(remainingUnits, 60.0)
+            cost += tier1 * 14.0
+            remainingUnits -= tier1
+        }
+        if (remainingUnits > 0) {
+            val tier2 = min(remainingUnits, 30.0)
+            cost += tier2 * 20.0
+            remainingUnits -= tier2
+        }
+        if (remainingUnits > 0) {
+            cost += remainingUnits * 28.0
+        }
+        return cost
+    }
+
     private fun startHeartbeatPolling() {
         heartbeatJob?.cancel()
         heartbeatJob = viewModelScope.launch(Dispatchers.IO) {
@@ -232,14 +338,23 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
                 val wifi = apiClient.getWifiStatus(device.ip)
                 val relays = apiClient.getRelayStates(device.ip, device.masterToken)
 
+                var energy: EnergyData? = null
+                if (device.hasEnergy) {
+                    energy = apiClient.getEnergy(device.ip)
+                }
+
                 withContext(Dispatchers.Main) {
                     if (hb != null) selectedHeartbeat = hb
                     if (info != null) selectedDeviceInfo = info
                     if (wifi != null) selectedWifiStatus = wifi
                     if (relays != null) activeRelayStates = relays
+                    if (energy != null) {
+                        activeEnergyData = energy
+                        totalUnits += (energy.powerW / 3600000.0)
+                    }
                 }
 
-                delay(2.seconds) // Refresh active device controls every 2s
+                delay(1.seconds) // Refresh active device controls and telemetry every 1s
             }
         }
     }
@@ -247,6 +362,7 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         discoveryManager.stopDiscovery()
+        bleManager.stopBleScan()
         heartbeatJob?.cancel()
         detailPollingJob?.cancel()
     }

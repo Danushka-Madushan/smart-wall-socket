@@ -185,7 +185,14 @@ fun PoPClaimScreen(
         Button(
             onClick = {
                 val cleanPop = extractPopFromInput(popInput)
-                viewModel.claimDevice(targetDevice.ip, cleanPop, targetDevice.id) { success, msg ->
+                viewModel.claimDevice(
+                    ip = targetDevice.ip,
+                    pop = cleanPop,
+                    targetDeviceId = targetDevice.id,
+                    switches = targetDevice.switches,
+                    hasEnergy = targetDevice.energy,
+                    transport = if (targetDevice.energy) "ble" else "lan"
+                ) { success, msg ->
                     Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                     if (success) {
                         onClaimSuccess()

@@ -22,7 +22,9 @@ class DeviceStorage(context: Context) {
                         masterToken = obj.getString("masterToken"),
                         pop = obj.optString("pop", ""),
                         switches = obj.optInt("switches", 2),
-                        claimedAt = obj.optLong("claimedAt", System.currentTimeMillis())
+                        hasEnergy = obj.optBoolean("hasEnergy", false),
+                        transport = obj.optString("transport", "lan"),
+                        claimedAt = obj.optLong("claimedAt", System.currentTimeMillis()),
                     )
                 )
             }
@@ -64,6 +66,8 @@ class DeviceStorage(context: Context) {
                 put("masterToken", device.masterToken)
                 put("pop", device.pop)
                 put("switches", device.switches)
+                put("hasEnergy", device.hasEnergy)
+                put("transport", device.transport)
                 put("claimedAt", device.claimedAt)
             }
             jsonArray.put(obj)
