@@ -6,6 +6,10 @@
 		{
 			"name": "firmware-8266",
 			"path": "firmware/esp-8266"
+		},
+		{
+			"name": "esp-32S",
+			"path": "firmware/esp-32S"
 		}
 	],
 	"settings": {}
