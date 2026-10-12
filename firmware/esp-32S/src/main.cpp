@@ -4,18 +4,18 @@
 #include <Adafruit_ADS1X15.h>
 
 // ======================== HARDWARE CONFIGURATION ========================
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET -1
-#define OLED_I2C_ADDR 0x3C
-#define ADS_I2C_ADDR 0x48
+#define SCREEN_WIDTH    128
+#define SCREEN_HEIGHT   64
+#define OLED_RESET      -1
+#define OLED_I2C_ADDR   0x3C
+#define ADS_I2C_ADDR    0x48
 
-#define I2C_SDA_PIN 21
-#define I2C_SCL_PIN 22
-#define RELAY_PIN 4
+#define I2C_SDA_PIN     21
+#define I2C_SCL_PIN     22
+#define RELAY_PIN       4
 
 // Relay logic (active-LOW)
-#define RELAY_STATE_ON LOW
+#define RELAY_STATE_ON  LOW
 #define RELAY_STATE_OFF HIGH
 
 // ======================== SENSOR CALIBRATION ========================
@@ -27,13 +27,10 @@ const float I_CAL = 30.0;
 float V_CAL = 365.0;
 
 // Noise gate threshold: Suppress ghost wattage when no load is attached
-// 12mA threshold (~2.8W at 230V) allows phone chargers and routers while suppressing ambient noise
-const float CURRENT_NOISE_FLOOR = 0.012; // 12mA
-const float POWER_NOISE_FLOOR = 1.0;     // 1.0W active power floor
+const float CURRENT_NOISE_FLOOR = 0.05; // 50mA
 
 // ======================== SHARED DATA STRUCTURE ========================
-struct TelemetryData
-{
+struct TelemetryData {
   float vRMS;
   float iRMS;
   float activePower;
@@ -42,151 +39,101 @@ struct TelemetryData
   float a0DCBias;
   float a1DCBias;
   float vPeakToPeak;
-  bool relayEngaged;
+  bool  relayEngaged;
   uint32_t sampleCount;
 };
 
 TelemetryData sharedData;
 SemaphoreHandle_t dataMutex;
-SemaphoreHandle_t i2cMutex;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1115 ads;
 
 // ======================== CORE 1: SAMPLING TASK ========================
 // Pinned to Core 1: runs without interruption from Wi-Fi or screen rendering
-void powerSamplingTask(void *pvParameters)
-{
+void powerSamplingTask(void *pvParameters) {
   const int SAMPLES_PER_CYCLE = 180; // ~400-500ms sampling window (20-25 AC cycles)
   float rawV[SAMPLES_PER_CYCLE];
   float rawI[SAMPLES_PER_CYCLE];
 
-  // EMA smoothing state to prevent single-sample jitter at low wattages
-  float smoothedIRMS = 0.0;
-  float smoothedP = 0.0;
-
-  for (;;)
-  {
+  for (;;) {
     float sumV = 0.0;
     float sumI = 0.0;
     float minV = 5.0, maxV = 0.0;
 
-    // --- Pass 1: High-Speed Burst Sampling with I2C Mutex ---
-    bool lockAcquired = false;
-    if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(150)) == pdTRUE)
-    {
-      lockAcquired = true;
-      for (int i = 0; i < SAMPLES_PER_CYCLE; i++)
-      {
-        // Single-ended conversion on ADS1115
-        int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current (SCT-013)
-        int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage (ZMPT101B)
+    // --- Pass 1: High-Speed Burst Sampling ---
+    for (int i = 0; i < SAMPLES_PER_CYCLE; i++) {
+      // Single-ended conversion on ADS1115
+      int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current (SCT-013)
+      int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage (ZMPT101B)
 
-        float vVolts = ads.computeVolts(adc1);
-        float iVolts = ads.computeVolts(adc0);
+      float vVolts = ads.computeVolts(adc1);
+      float iVolts = ads.computeVolts(adc0);
 
-        rawV[i] = vVolts;
-        rawI[i] = iVolts;
+      rawV[i] = vVolts;
+      rawI[i] = iVolts;
 
-        sumV += vVolts;
-        sumI += iVolts;
+      sumV += vVolts;
+      sumI += iVolts;
 
-        if (vVolts < minV)
-          minV = vVolts;
-        if (vVolts > maxV)
-          maxV = vVolts;
-      }
-      xSemaphoreGive(i2cMutex);
-    }
-
-    if (!lockAcquired)
-    {
-      // If I2C was busy, yield briefly and retry
-      vTaskDelay(pdMS_TO_TICKS(15));
-      continue;
+      if (vVolts < minV) minV = vVolts;
+      if (vVolts > maxV) maxV = vVolts;
     }
 
     // Dynamic DC bias removal
     float vOffset = sumV / SAMPLES_PER_CYCLE;
     float iOffset = sumI / SAMPLES_PER_CYCLE;
 
-    // --- Pass 2: RMS and Phase-Compensated Instantaneous Power Math ---
+    // --- Pass 2: RMS and Instantaneous Power Math ---
     float sumSqV = 0.0;
     float sumSqI = 0.0;
-    float sumP = 0.0;
+    float sumP   = 0.0;
 
-    for (int i = 0; i < SAMPLES_PER_CYCLE; i++)
-    {
+    for (int i = 0; i < SAMPLES_PER_CYCLE; i++) {
       // Remove DC offset and scale to physical engineering units
+      float instV = (rawV[i] - vOffset) * V_CAL;
       float instI = (rawI[i] - iOffset) * I_CAL;
-
-      // Phase Compensation: A1 (Voltage) was sampled ~1.16ms after A0 (Current).
-      // The midpoint of v[i] and v[i-1] aligns precisely with the timestamp of i[i].
-      float vRawAligned = (i > 0) ? ((rawV[i] + rawV[i - 1]) * 0.5f) : rawV[i];
-      float instV = (vRawAligned - vOffset) * V_CAL;
 
       sumSqV += (instV * instV);
       sumSqI += (instI * instI);
-      sumP += (instV * instI); // Instantaneous real power
+      sumP   += (instV * instI); // Instantaneous real power
     }
 
     float calcVRMS = sqrt(sumSqV / SAMPLES_PER_CYCLE);
     float calcIRMS = sqrt(sumSqI / SAMPLES_PER_CYCLE);
-    float calcP = fabs(sumP / SAMPLES_PER_CYCLE); // Active Power
+    float calcP    = fabs(sumP / SAMPLES_PER_CYCLE); // Active Power
 
-    // Apply tuned low-load noise floor
-    if (calcIRMS < CURRENT_NOISE_FLOOR || calcP < POWER_NOISE_FLOOR)
-    {
+    // Apply low-load noise floor
+    if (calcIRMS < CURRENT_NOISE_FLOOR) {
       calcIRMS = 0.0;
-      calcP = 0.0;
-      smoothedIRMS = 0.0;
-      smoothedP = 0.0;
-    }
-    else
-    {
-      // Exponential Moving Average filter for stable readings at low loads
-      if (smoothedP <= 0.0)
-      {
-        smoothedP = calcP;
-        smoothedIRMS = calcIRMS;
-      }
-      else
-      {
-        smoothedP = (0.7f * smoothedP) + (0.3f * calcP);
-        smoothedIRMS = (0.7f * smoothedIRMS) + (0.3f * calcIRMS);
-      }
-      calcP = smoothedP;
-      calcIRMS = smoothedIRMS;
+      calcP    = 0.0;
     }
 
-    float calcS = calcVRMS * calcIRMS; // Apparent Power (VA)
+    float calcS  = calcVRMS * calcIRMS;               // Apparent Power (VA)
     float calcPF = (calcS > 0.0) ? (calcP / calcS) : 1.0;
-    if (calcPF > 1.0)
-      calcPF = 1.0;
+    if (calcPF > 1.0) calcPF = 1.0;
 
     // Update shared memory safely using FreeRTOS Mutex
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE)
-    {
-      sharedData.vRMS = calcVRMS;
-      sharedData.iRMS = calcIRMS;
-      sharedData.activePower = calcP;
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+      sharedData.vRMS          = calcVRMS;
+      sharedData.iRMS          = calcIRMS;
+      sharedData.activePower   = calcP;
       sharedData.apparentPower = calcS;
-      sharedData.powerFactor = calcPF;
-      sharedData.a0DCBias = iOffset;
-      sharedData.a1DCBias = vOffset;
-      sharedData.vPeakToPeak = (maxV - minV);
-      sharedData.sampleCount = SAMPLES_PER_CYCLE;
+      sharedData.powerFactor   = calcPF;
+      sharedData.a0DCBias      = iOffset;
+      sharedData.a1DCBias      = vOffset;
+      sharedData.vPeakToPeak   = (maxV - minV);
+      sharedData.sampleCount   = SAMPLES_PER_CYCLE;
       xSemaphoreGive(dataMutex);
     }
 
-    // Yield to allow Core 0 to access I2C and prevent watchdog timeout
-    vTaskDelay(pdMS_TO_TICKS(25));
+    // Brief yield to prevent watchdog timeout on Core 1
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
 // ======================== OLED DISPLAY ROUTINE ========================
-void renderDisplay(const TelemetryData &d)
-{
+void renderDisplay(const TelemetryData &d) {
   display.clearDisplay();
 
   // Top Status Bar (Inverted header)
@@ -233,17 +180,11 @@ void renderDisplay(const TelemetryData &d)
   display.setCursor(102, 54);
   display.print(F("C1|C0"));
 
-  // Push buffer across I2C bus safely with mutex protection
-  if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(100)) == pdTRUE)
-  {
-    display.display();
-    xSemaphoreGive(i2cMutex);
-  }
+  display.display();
 }
 
 // ======================== CORE 0: SETUP & DISPATCH ========================
-void setup()
-{
+void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println(F("\n=========================================="));
@@ -255,78 +196,60 @@ void setup()
   digitalWrite(RELAY_PIN, RELAY_STATE_ON); // Default ON to power the load socket
   sharedData.relayEngaged = true;
 
-  // 2. I2C Bus & Screen Init (400 kHz Fast Mode)
+  // 2. I2C Bus & Screen Init
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(400000);
-
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR))
-  {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR)) {
     Serial.println(F("[ERROR] SSD1306 not found at 0x3C!"));
-    while (1)
-      delay(500);
+    while (1) delay(500);
   }
 
-  // Instantly wipe uninitialized SSD1306 GDDRAM static/dots
-  display.clearDisplay();
-  display.display();
-
   // 3. ADS1115 Init
-  if (!ads.begin(ADS_I2C_ADDR))
-  {
+  if (!ads.begin(ADS_I2C_ADDR)) {
     Serial.println(F("[ERROR] ADS1115 not found at 0x48!"));
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 20);
     display.println(F("ADS1115 NOT FOUND!"));
     display.display();
-    while (1)
-      delay(500);
+    while (1) delay(500);
   }
 
   // Set gain to GAIN_ONE (+/- 4.096V range, 1 LSB = 0.125mV)
   ads.setGain(GAIN_ONE);
   ads.setDataRate(RATE_ADS1115_860SPS);
 
-  // 4. Create Mutexes for thread-safe memory exchange and I2C bus sharing
+  // 4. Create Mutex for thread-safe memory exchange
   dataMutex = xSemaphoreCreateMutex();
-  i2cMutex = xSemaphoreCreateMutex();
 
   // 5. Pin Sampling Task to Core 1
   xTaskCreatePinnedToCore(
-      powerSamplingTask,   // Task function
-      "PowerSamplingTask", // Task name
-      4096,                // Stack size in words
-      NULL,                // Parameters
-      2,                   // Priority (High)
-      NULL,                // Task handle
-      1                    // Core ID (Core 1)
+    powerSamplingTask,   // Task function
+    "PowerSamplingTask", // Task name
+    4096,                // Stack size in words
+    NULL,                // Parameters
+    2,                   // Priority (High)
+    NULL,                // Task handle
+    1                    // Core ID (Core 1)
   );
 
   Serial.println(F("[OK] Sampling Task successfully allocated to Core 1."));
   Serial.println(F("[INFO] Send '1' to turn Relay ON, '0' to turn Relay OFF."));
 }
 
-void loop()
-{
+void loop() {
   // --- 1. Serial Command Handler (Relay Control) ---
-  if (Serial.available() > 0)
-  {
+  if (Serial.available() > 0) {
     char cmd = Serial.read();
-    if (cmd == '1')
-    {
+    if (cmd == '1') {
       digitalWrite(RELAY_PIN, RELAY_STATE_ON);
-      if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE)
-      {
+      if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         sharedData.relayEngaged = true;
         xSemaphoreGive(dataMutex);
       }
       Serial.println(F(">>> RELAY COMMAND: ENERGIZED (ON)"));
-    }
-    else if (cmd == '0')
-    {
+    } else if (cmd == '0') {
       digitalWrite(RELAY_PIN, RELAY_STATE_OFF);
-      if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE)
-      {
+      if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         sharedData.relayEngaged = false;
         xSemaphoreGive(dataMutex);
       }
@@ -336,8 +259,7 @@ void loop()
 
   // --- 2. Copy Telemetry Snapshot ---
   TelemetryData snap;
-  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE)
-  {
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     snap = sharedData;
     xSemaphoreGive(dataMutex);
   }
