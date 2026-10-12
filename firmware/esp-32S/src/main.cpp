@@ -45,7 +45,6 @@ struct TelemetryData {
 
 TelemetryData sharedData;
 SemaphoreHandle_t dataMutex;
-SemaphoreHandle_t i2cMutex;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1115 ads;
@@ -63,16 +62,10 @@ void powerSamplingTask(void *pvParameters) {
     float minV = 5.0, maxV = 0.0;
 
     // --- Pass 1: High-Speed Burst Sampling ---
-    // Protect each read pair with i2cMutex so Core 0 (OLED) can refresh cleanly without delay
     for (int i = 0; i < SAMPLES_PER_CYCLE; i++) {
-      int16_t adc0 = 0;
-      int16_t adc1 = 0;
-
-      if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        adc0 = ads.readADC_SingleEnded(0); // A0: Current (SCT-013)
-        adc1 = ads.readADC_SingleEnded(1); // A1: Voltage (ZMPT101B)
-        xSemaphoreGive(i2cMutex);
-      }
+      // Single-ended conversion on ADS1115
+      int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current (SCT-013)
+      int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage (ZMPT101B)
 
       float vVolts = ads.computeVolts(adc1);
       float iVolts = ads.computeVolts(adc0);
@@ -97,7 +90,7 @@ void powerSamplingTask(void *pvParameters) {
     float sumP   = 0.0;
 
     for (int i = 0; i < SAMPLES_PER_CYCLE; i++) {
-      // Direct raw voltage and current scaling (preserves original 230V calibration)
+      // Remove DC offset and scale to physical engineering units
       float instV = (rawV[i] - vOffset) * V_CAL;
       float instI = (rawI[i] - iOffset) * I_CAL;
 
@@ -110,7 +103,7 @@ void powerSamplingTask(void *pvParameters) {
     float calcIRMS = sqrt(sumSqI / SAMPLES_PER_CYCLE);
     float calcP    = fabs(sumP / SAMPLES_PER_CYCLE); // Active Power
 
-    // Apply low-load noise floor (original 50mA floor: no ghost readings)
+    // Apply low-load noise floor
     if (calcIRMS < CURRENT_NOISE_FLOOR) {
       calcIRMS = 0.0;
       calcP    = 0.0;
@@ -143,14 +136,14 @@ void powerSamplingTask(void *pvParameters) {
 void renderDisplay(const TelemetryData &d) {
   display.clearDisplay();
 
-  // Top Status Bar (Inverted header: "SMART PLUG" and "RLY: ON/OFF" fit cleanly on 1 line)
+  // Top Status Bar (Inverted header)
   display.fillRect(0, 0, SCREEN_WIDTH, 12, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(3, 2);
   display.print(F("SMART PLUG"));
-  display.setCursor(76, 2);
-  display.print(d.relayEngaged ? F("RLY: ON") : F("RLY: OFF"));
+  display.setCursor(72, 2);
+  display.print(d.relayEngaged ? F("[RELAY ON]") : F("[RLY OFF]"));
 
   display.setTextColor(SSD1306_WHITE);
 
@@ -179,26 +172,21 @@ void renderDisplay(const TelemetryData &d) {
   display.setCursor(2, 54);
   display.print(F("PF:"));
   display.print(d.powerFactor, 2);
-  display.setCursor(50, 54);
+  display.setCursor(56, 54);
   display.print(F("VA:"));
   display.print(d.apparentPower, 0);
 
   // Core Indicator
-  display.setCursor(96, 54);
+  display.setCursor(102, 54);
   display.print(F("C1|C0"));
 
-  // Push buffer to OLED safely with I2C mutex
-  if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-    display.display();
-    xSemaphoreGive(i2cMutex);
-  }
+  display.display();
 }
 
 // ======================== CORE 0: SETUP & DISPATCH ========================
 void setup() {
   Serial.begin(115200);
-  delay(50); // Fast rail stabilization
-
+  delay(1000);
   Serial.println(F("\n=========================================="));
   Serial.println(F(" ESP32 DUAL-CORE SMART PLUG TELEMETRY     "));
   Serial.println(F("=========================================="));
@@ -208,23 +196,14 @@ void setup() {
   digitalWrite(RELAY_PIN, RELAY_STATE_ON); // Default ON to power the load socket
   sharedData.relayEngaged = true;
 
-  // 2. I2C Bus & Screen Init (400 kHz Fast Mode for instant, tearing-free render)
+  // 2. I2C Bus & Screen Init
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(400000);
-
-  // 3. Create Mutexes for thread-safe memory exchange and I2C sharing
-  dataMutex = xSemaphoreCreateMutex();
-  i2cMutex  = xSemaphoreCreateMutex();
-
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR)) {
     Serial.println(F("[ERROR] SSD1306 not found at 0x3C!"));
     while (1) delay(500);
   }
 
-  // Turn OLED ON IMMEDIATELY (clears random static dots and renders initial frame)
-  renderDisplay(sharedData);
-
-  // 4. ADS1115 Init
+  // 3. ADS1115 Init
   if (!ads.begin(ADS_I2C_ADDR)) {
     Serial.println(F("[ERROR] ADS1115 not found at 0x48!"));
     display.clearDisplay();
@@ -238,6 +217,9 @@ void setup() {
   // Set gain to GAIN_ONE (+/- 4.096V range, 1 LSB = 0.125mV)
   ads.setGain(GAIN_ONE);
   ads.setDataRate(RATE_ADS1115_860SPS);
+
+  // 4. Create Mutex for thread-safe memory exchange
+  dataMutex = xSemaphoreCreateMutex();
 
   // 5. Pin Sampling Task to Core 1
   xTaskCreatePinnedToCore(
