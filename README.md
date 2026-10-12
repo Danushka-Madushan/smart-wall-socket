@@ -102,6 +102,8 @@ Both hardware nodes enforce a **Proof of Possession (PoP)** security handshake. 
 > [!TIP]
 > **PoP QR & Sticker Generator Web App**: Generate, customize, and print high-resolution physical pairing stickers using the included web tool in [`pop-gen/`](pop-gen/) or directly through [GitHub Pages](https://danushka-madushan.github.io/smart-wall-socket/pop-gen/).
 
+### Seamless Socket Reset & Reclaim
+If a socket was paired in a previous session or by another phone (e.g. unlinked while the socket was unpowered), the hardware remains protected in `claimed` mode. When pairing, both ESP8266 and ESP32-S will signal that the device is already claimed. The Android app automatically detects this and provides a 1-tap **"Reset & Pair"** recovery dialog: as long as you hold the physical device PIN (PoP secret), the app safely resets the device's storage and claims ownership instantly without any manual terminal commands.
 
 ### Compact Semicolon QR Standard
 
