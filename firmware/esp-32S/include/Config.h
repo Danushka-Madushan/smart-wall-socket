@@ -43,7 +43,8 @@ extern const int SWITCH_COUNT;
 extern const bool HAS_ENERGY;
 extern const size_t MAX_PAYLOAD_SIZE;
 
-// Device ID / Service Name helper
+// Unified Device ID - static string for label printing & BLE provisioning
+extern const char *DEVICE_ID;
 const char *getDeviceId();
 
 // =====================================================================
