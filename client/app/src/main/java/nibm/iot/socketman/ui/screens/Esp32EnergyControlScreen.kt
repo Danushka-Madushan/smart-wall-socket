@@ -399,7 +399,7 @@ fun Esp32EnergyControlScreen(
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().height(48.dp)
         ) {
-            Text("Unclaim & Factory Reset Socket")
+            Text("Factory Reset Socket")
         }
 
         Spacer(modifier = Modifier.height(24.dp))

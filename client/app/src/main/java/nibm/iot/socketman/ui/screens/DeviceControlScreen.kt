@@ -52,7 +52,7 @@ fun DeviceControlScreen(
             onDismissRequest = { showResetDialog = false },
             title = { Text("Factory Reset Socket?") },
             text = {
-                Text("This will unclaim and reset the device to factory defaults, and remove it from your saved sockets list.")
+                Text("This will reset the device to factory defaults and remove it from your saved sockets list.")
             },
             confirmButton = {
                 Button(
@@ -61,7 +61,7 @@ fun DeviceControlScreen(
                         viewModel.unclaimCurrentDevice { success ->
                             Toast.makeText(
                                 context,
-                                if (success) "Device unclaimed and reset!" else "Device removed from local list.",
+                                if (success) "Device reset to factory defaults!" else "Device removed from local list.",
                                 Toast.LENGTH_LONG
                             ).show()
                             onNavigateBack()
@@ -69,7 +69,7 @@ fun DeviceControlScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Unclaim & Reset")
+                    Text("Reset Socket")
                 }
             },
             dismissButton = {
@@ -117,7 +117,7 @@ fun DeviceControlScreen(
             }
 
             IconButton(onClick = { showResetDialog = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Unclaim Device", tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Delete, contentDescription = "Reset Socket", tint = MaterialTheme.colorScheme.error)
             }
         }
 
@@ -275,7 +275,7 @@ fun DeviceControlScreen(
         ) {
             Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Unclaim & Factory Reset Device")
+            Text("Factory Reset Device")
         }
 
         Spacer(modifier = Modifier.height(24.dp))
