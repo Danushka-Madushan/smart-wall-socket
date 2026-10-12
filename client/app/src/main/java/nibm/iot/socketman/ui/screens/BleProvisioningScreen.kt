@@ -202,7 +202,7 @@ fun BleProvisioningScreen(
                 .height(52.dp),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text("Provision Wi-Fi & Claim Device")
+            Text("Connect Wi-Fi & Pair Socket")
         }
     }
 }

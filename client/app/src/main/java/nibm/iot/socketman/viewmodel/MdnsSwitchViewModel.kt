@@ -75,6 +75,13 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
     var provisioningStatusText by mutableStateOf<String?>(null)
         private set
 
+    var pendingReclaimInfo by mutableStateOf<PendingClaimInfo?>(null)
+        private set
+
+    fun clearPendingReclaim() {
+        pendingReclaimInfo = null
+    }
+
     private var heartbeatJob: Job? = null
     private var detailPollingJob: Job? = null
 
@@ -163,9 +170,84 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
                     )
                     storage.saveDevice(newDevice)
                     loadSavedDevices()
+                    pendingReclaimInfo = null
                     onResult(true, response.message ?: "Device claimed successfully!")
                 } else {
                     val err = response.error ?: "Claim rejected by device."
+                    claimErrorMessage = err
+                    if (response.isAlreadyClaimed) {
+                        pendingReclaimInfo = PendingClaimInfo(
+                            ip = ip,
+                            pop = pop,
+                            targetDeviceId = targetDeviceId,
+                            switches = switches,
+                            hasEnergy = hasEnergy,
+                            transport = transport
+                        )
+                    }
+                    onResult(false, err)
+                }
+            }
+        }
+    }
+
+    fun forceReclaimDevice(
+        ip: String,
+        pop: String,
+        targetDeviceId: String,
+        switches: Int = 2,
+        hasEnergy: Boolean = false,
+        transport: String = "lan",
+        onResult: (Boolean, String) -> Unit
+    ) {
+        if (isClaiming) return
+        isClaiming = true
+        claimErrorMessage = null
+        pendingReclaimInfo = null
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // 1. Send unclaim with physical PoP secret override (masterToken = null)
+            val unclaimSuccess = apiClient.unclaimDevice(ip = ip, masterToken = null, pop = pop)
+            if (!unclaimSuccess) {
+                withContext(Dispatchers.Main) {
+                    isClaiming = false
+                    val err = "Failed to reset socket. Check your device PIN."
+                    claimErrorMessage = err
+                    onResult(false, err)
+                }
+                return@launch
+            }
+
+            // Small delay for EEPROM/NVS write on ESP8266 & ESP32-S
+            delay(300)
+
+            // 2. Immediately claim with new master token
+            val generatedToken = generateMasterToken()
+            val claimResponse = apiClient.claimDevice(ip, pop, generatedToken)
+            val info = if (claimResponse.isSuccess) apiClient.getInfo(ip) else null
+
+            withContext(Dispatchers.Main) {
+                isClaiming = false
+                if (claimResponse.isSuccess) {
+                    val finalSwitches = info?.switches ?: switches
+                    val finalHasEnergy = if (info != null) info.energyMonitoring else hasEnergy
+                    val finalTransport = info?.transport ?: transport
+                    val finalId = if (info != null && info.id.isNotBlank() && info.id != "Unknown") info.id else targetDeviceId
+
+                    val newDevice = SavedDevice(
+                        id = finalId,
+                        ip = ip,
+                        masterToken = generatedToken,
+                        pop = pop,
+                        switches = finalSwitches,
+                        hasEnergy = finalHasEnergy,
+                        transport = finalTransport
+                    )
+                    storage.saveDevice(newDevice)
+                    loadSavedDevices()
+                    onResult(true, "Socket successfully reset and paired!")
+                } else {
+                    val err = claimResponse.error ?: "Claim rejected by device."
                     claimErrorMessage = err
                     onResult(false, err)
                 }
@@ -203,8 +285,24 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
                         hasEnergy = true,
                         transport = "ble"
                     ) { claimOk, claimMsg ->
-                        provisioningStatusText = null
-                        onResult(claimOk, claimMsg)
+                        if (!claimOk && pendingReclaimInfo != null) {
+                            // If socket was already claimed in previous NVS session, auto reset & reclaim using the validated BLE PoP PIN
+                            provisioningStatusText = "Resetting previous session & claiming..."
+                            forceReclaimDevice(
+                                ip = assignedIp,
+                                pop = popPin,
+                                targetDeviceId = deviceName,
+                                switches = 1,
+                                hasEnergy = true,
+                                transport = "ble"
+                            ) { reclaimOk, reclaimMsg ->
+                                provisioningStatusText = null
+                                onResult(reclaimOk, reclaimMsg)
+                            }
+                        } else {
+                            provisioningStatusText = null
+                            onResult(claimOk, claimMsg)
+                        }
                     }
                 } else {
                     provisioningStatusText = null

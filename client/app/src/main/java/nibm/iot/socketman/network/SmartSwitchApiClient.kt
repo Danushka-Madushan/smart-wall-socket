@@ -117,6 +117,7 @@ class SmartSwitchApiClient {
                 )
                 409 -> ClaimResponse(
                     isSuccess = false,
+                    isAlreadyClaimed = true,
                     error = json.optString("error", "Device already claimed"),
                 )
                 else -> ClaimResponse(

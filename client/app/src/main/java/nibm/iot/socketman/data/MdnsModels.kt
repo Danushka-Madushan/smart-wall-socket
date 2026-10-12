@@ -22,6 +22,16 @@ data class ClaimResponse(
     val status: String? = null,
     val message: String? = null,
     val error: String? = null,
+    val isAlreadyClaimed: Boolean = false,
+)
+
+data class PendingClaimInfo(
+    val ip: String,
+    val pop: String,
+    val targetDeviceId: String,
+    val switches: Int = 2,
+    val hasEnergy: Boolean = false,
+    val transport: String = "lan",
 )
 
 fun formatUptime(seconds: Long): String {

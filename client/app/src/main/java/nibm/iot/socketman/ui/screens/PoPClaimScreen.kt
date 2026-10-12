@@ -64,6 +64,43 @@ fun PoPClaimScreen(
         }
     }
 
+    val pendingReclaim = viewModel.pendingReclaimInfo
+    if (pendingReclaim != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearPendingReclaim() },
+            title = { Text("Socket Already Paired") },
+            text = {
+                Text("This socket was paired in a previous session or by another device. Since you have physical access and the device PIN, would you like to reset and pair it now?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.forceReclaimDevice(
+                            ip = pendingReclaim.ip,
+                            pop = pendingReclaim.pop,
+                            targetDeviceId = pendingReclaim.targetDeviceId,
+                            switches = pendingReclaim.switches,
+                            hasEnergy = pendingReclaim.hasEnergy,
+                            transport = pendingReclaim.transport
+                        ) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            if (success) {
+                                onClaimSuccess()
+                            }
+                        }
+                    }
+                ) {
+                    Text("Reset & Pair")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.clearPendingReclaim() }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -83,7 +120,7 @@ fun PoPClaimScreen(
             }
 
             Text(
-                text = "PoP Claim Handshake",
+                text = "Pair Smart Socket",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -165,7 +202,7 @@ fun PoPClaimScreen(
         OutlinedTextField(
             value = popInput,
             onValueChange = { popInput = it },
-            label = { Text("Physical PoP Secret / QR Payload") },
+            label = { Text("Device Setup PIN (PoP)") },
             placeholder = { Text("e.g. NODE_SEC_4102") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -212,11 +249,11 @@ fun PoPClaimScreen(
                     strokeWidth = 2.dp
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Executing Claim...")
+                Text("Pairing Socket...")
             } else {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Verify Claim")
+                Text("Pair Socket")
             }
         }
     }
