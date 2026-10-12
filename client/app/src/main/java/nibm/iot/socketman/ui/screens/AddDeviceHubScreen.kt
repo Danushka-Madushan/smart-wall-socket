@@ -132,7 +132,7 @@ fun AddDeviceHubScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Tab Selector (mDNS LAN vs BLE WiFiProv)
+        // Tab Selector (Wi-Fi vs Bluetooth Setup)
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surface,
@@ -141,12 +141,12 @@ fun AddDeviceHubScreen(
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text("🌐 LAN mDNS", fontWeight = FontWeight.Bold) }
+                text = { Text("🌐 Wi-Fi Network", fontWeight = FontWeight.Bold) }
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text("📶 BLE Setup", fontWeight = FontWeight.Bold) }
+                text = { Text("📶 Bluetooth Setup", fontWeight = FontWeight.Bold) }
             )
         }
 
@@ -163,14 +163,14 @@ fun AddDeviceHubScreen(
                         Text(text = "🌐", fontSize = 48.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No Local mDNS Devices Found",
+                            text = "No Local Sockets Found",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Ensure your switch is connected to the same Wi-Fi subnet.",
+                            text = "Ensure your smart socket is connected to the same Wi-Fi network.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -210,7 +210,7 @@ fun AddDeviceHubScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Bluetooth permission is required to scan for and connect to nearby ESP32-S smart wall sockets.",
+                            text = "Bluetooth permission is required to scan for and connect to nearby smart wall sockets.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -232,14 +232,14 @@ fun AddDeviceHubScreen(
                         Text(text = "📶", fontSize = 48.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No BLE Sockets Found",
+                            text = "No Nearby Sockets Found",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Ensure your ESP32-S socket is in BLE Pairing Mode.",
+                            text = "Ensure your smart socket is powered on and in Pairing Mode.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -270,7 +270,7 @@ fun AddDeviceHubScreen(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "ESP32-S BLE Provisioning",
+                                        text = "Smart Socket (Ready for Setup)",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -285,6 +285,77 @@ fun AddDeviceHubScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DiscoveredDeviceCard(
+    device: MdnsDevice,
+    onClaimClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = device.id,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "IP: ${device.ip}  •  ${if (device.energy) "Energy Socket" else "${device.switches} Switches"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (device.claimed) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        text = if (device.claimed) "PAIRED" else "UNPAIRED",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (device.claimed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (!device.claimed) {
+                Button(
+                    onClick = onClaimClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Pair & Claim Socket")
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onClaimClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Verify Connection")
                 }
             }
         }

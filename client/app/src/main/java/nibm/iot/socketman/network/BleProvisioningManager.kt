@@ -42,6 +42,8 @@ class BleProvisioningManager(private val context: Context) {
                 val device = result.device ?: return
                 val name = device.name ?: result.scanRecord?.deviceName ?: return
                 if (name.startsWith("PROV_", ignoreCase = true) ||
+                    name.startsWith("RELAY_", ignoreCase = true) ||
+                    name.startsWith("NODE_", ignoreCase = true) ||
                     name.startsWith("SmartSocket", ignoreCase = true) ||
                     name.startsWith("ESP", ignoreCase = true)
                 ) {
@@ -96,19 +98,19 @@ class BleProvisioningManager(private val context: Context) {
         stopBleScan()
 
         scope.launch(Dispatchers.IO) {
-            onStatusUpdate("Connecting to $deviceName over BLE GATT...")
+            onStatusUpdate("Connecting to $deviceName...")
             delay(1500)
 
-            onStatusUpdate("Initiating Security-1 ECDH Key Exchange (PoP: $popPin)...")
+            onStatusUpdate("Establishing secure handshake...")
             delay(1500)
 
-            onStatusUpdate("Encrypting & Transferring Wi-Fi Creds ($ssid)...")
+            onStatusUpdate("Configuring Wi-Fi network ($ssid)...")
             delay(2000)
 
-            onStatusUpdate("Wi-Fi Credentials Applied. ESP32-S Joining Network...")
+            onStatusUpdate("Credentials applied. Device connecting to Wi-Fi...")
             delay(2500)
 
-            onStatusUpdate("Provisioning Success! Resolving Network Address...")
+            onStatusUpdate("Setup complete! Connecting to socket...")
             delay(1000)
 
             // Resolve target IP: user override -> smartsocket.local mDNS resolution -> fallback default

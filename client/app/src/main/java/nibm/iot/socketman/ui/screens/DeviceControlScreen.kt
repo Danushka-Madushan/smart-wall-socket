@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import nibm.iot.socketman.data.formatUptime
 import nibm.iot.socketman.viewmodel.MdnsSwitchViewModel
 
 @Composable
@@ -49,9 +50,9 @@ fun DeviceControlScreen(
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Factory Reset & Unclaim?") },
+            title = { Text("Factory Reset Socket?") },
             text = {
-                Text("This will send an unclaim command to the device, clear the master authorization token from EEPROM, and remove it from your saved list.")
+                Text("This will unclaim and reset the device to factory defaults, and remove it from your saved sockets list.")
             },
             confirmButton = {
                 Button(
@@ -248,7 +249,7 @@ fun DeviceControlScreen(
 
         SwitchControlCard(
             channelNumber = 1,
-            gpioPin = "GPIO14 (D5)",
+            subtitle = "Outlet 1 Power",
             isOn = sw1State,
             onToggle = { newState -> viewModel.toggleRelay(1, newState) }
         )
@@ -257,7 +258,7 @@ fun DeviceControlScreen(
 
         SwitchControlCard(
             channelNumber = 2,
-            gpioPin = "GPIO12 (D6)",
+            subtitle = "Outlet 2 Power",
             isOn = sw2State,
             onToggle = { newState -> viewModel.toggleRelay(2, newState) }
         )
@@ -284,7 +285,7 @@ fun DeviceControlScreen(
 @Composable
 fun SwitchControlCard(
     channelNumber: Int,
-    gpioPin: String,
+    subtitle: String,
     isOn: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
@@ -319,7 +320,7 @@ fun SwitchControlCard(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Pin: $gpioPin  |  Status: ${if (isOn) "ON" else "OFF"}",
+                    text = "$subtitle • Status: ${if (isOn) "ON" else "OFF"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -341,19 +342,5 @@ fun SwitchControlCard(
                 )
             }
         }
-    }
-}
-
-private fun formatUptime(seconds: Long): String {
-    if (seconds <= 0) return "0s"
-    val hrs = seconds / 3600
-    val mins = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return if (hrs > 0) {
-        "${hrs}h ${mins}m ${secs}s"
-    } else if (mins > 0) {
-        "${mins}m ${secs}s"
-    } else {
-        "${secs}s"
     }
 }

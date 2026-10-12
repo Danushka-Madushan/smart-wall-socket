@@ -98,7 +98,7 @@ fun BleProvisioningScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Transport: BLE WiFiProv (Security 1)",
+                    text = "Connection: Bluetooth (Secure Setup)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -126,9 +126,9 @@ fun BleProvisioningScreen(
                                     context,
                                     "Warning: Scanned QR ID (${qrInfo.deviceId}) differs from target BLE device (${bleDevice.name})",
                                     Toast.LENGTH_LONG
-                                ).show()
+                                 ).show()
                             } else {
-                                Toast.makeText(context, "PoP PIN Extracted from QR Code!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Setup PIN Extracted from QR Code!", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -142,7 +142,7 @@ fun BleProvisioningScreen(
         OutlinedTextField(
             value = popPinInput,
             onValueChange = { popPinInput = it },
-            label = { Text("Proof of Possession (PoP PIN)") },
+            label = { Text("Device Setup PIN (PoP)") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )

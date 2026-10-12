@@ -17,25 +17,26 @@ data class BleDiscoveredDevice(
     val address: String = "",
 )
 
-data class QrPayload(
-    val version: String = "v1",
-    val type: String = "node",
-    val id: String,
-    val pop: String,
-    val transport: String = "lan",
-)
-
-data class ClaimRequest(
-    val pop: String,
-    val masterToken: String,
-)
-
 data class ClaimResponse(
     val isSuccess: Boolean,
     val status: String? = null,
     val message: String? = null,
     val error: String? = null,
 )
+
+fun formatUptime(seconds: Long): String {
+    if (seconds <= 0) return "0s"
+    val hrs = seconds / 3600
+    val mins = (seconds % 3600) / 60
+    val secs = seconds % 60
+    return if (hrs > 0) {
+        "${hrs}h ${mins}m ${secs}s"
+    } else if (mins > 0) {
+        "${mins}m ${secs}s"
+    } else {
+        "${secs}s"
+    }
+}
 
 data class DeviceInfoResponse(
     val id: String,

@@ -66,9 +66,9 @@ smart-wall-socket/
 │   ├── app/
 │   │   └── src/main/java/nibm/iot/socketman/
 │   │       ├── MainActivity.kt
-│   │       ├── network/              # REST API Client (SmartSwitchApiClient)
-│   │       ├── ui/screens/           # Jetpack Compose UI (Home, Discovery, PoP Claim)
-│   │       └── viewmodel/            # SocketViewModel & MdnsSwitchViewModel
+│   │       ├── network/              # REST & BLE Clients (SmartSwitchApiClient, BleProvisioningManager)
+│   │       ├── ui/screens/           # Jetpack Compose UI (Home, Hub, BLE Prov, PoP Claim, Energy & Control)
+│   │       └── viewmodel/            # MdnsSwitchViewModel & State Architecture
 │   ├── build.gradle.kts
 │   └── settings.gradle.kts
 ├── firmware/

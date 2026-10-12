@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import nibm.iot.socketman.data.formatUptime
 import nibm.iot.socketman.viewmodel.MdnsSwitchViewModel
 
 @Composable
@@ -43,9 +44,9 @@ fun Esp32EnergyControlScreen(
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Factory Reset & Unclaim?") },
+            title = { Text("Factory Reset Socket?") },
             text = {
-                Text("This will send an unclaim command to the device, clear the master authorization token from NVS flash, and remove it from your saved list.")
+                Text("This will restore the socket to factory pairing mode, clear stored authorization credentials, and remove it from your saved sockets list.")
             },
             confirmButton = {
                 Button(
@@ -54,7 +55,7 @@ fun Esp32EnergyControlScreen(
                         viewModel.unclaimCurrentDevice { success ->
                             Toast.makeText(
                                 context,
-                                if (success) "Device unclaimed and reset!" else "Device removed from local list.",
+                                if (success) "Socket reset to factory mode." else "Removed from device list.",
                                 Toast.LENGTH_LONG
                             ).show()
                             onNavigateBack()
@@ -62,7 +63,7 @@ fun Esp32EnergyControlScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Unclaim & Reset")
+                    Text("Reset Socket")
                 }
             },
             dismissButton = {
@@ -282,7 +283,7 @@ fun Esp32EnergyControlScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Pin: GPIO 4  |  Logic: Inverted",
+                        text = "Socket Power Outlet • Live Control",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -361,6 +362,13 @@ fun Esp32EnergyControlScreen(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Signal RSSI:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${wifiStatus?.rssi ?: 0} dBm", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("IP Address:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(device.ip, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                 }
@@ -376,7 +384,7 @@ fun Esp32EnergyControlScreen(
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Uptime:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${heartbeat?.uptimeSeconds ?: 0}s", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    Text(formatUptime(heartbeat?.uptimeSeconds ?: 0L), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -395,5 +403,32 @@ fun Esp32EnergyControlScreen(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
