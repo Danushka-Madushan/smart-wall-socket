@@ -27,19 +27,26 @@ The ESP32-S3 initializes NimBLE/Bluedroid and broadcasts standard BLE advertisin
 3. **Capture Device Identity and Secret:** Mobile App Scan.
 The mobile phone—connected only to cellular data or no network at all—opens the camera within your custom application to scan the physical QR code affixed to the socket.
 
-* The QR code contains a structured JSON payload:
+* **Compact Semicolon-Separated QR Payload** (Recommended: 29 characters, Version 2 QR matrix):
 
-```json
-{
-  "ver": "v1",
-  "name": "PROV_A1B2C3",
-  "pop": "S3_SEC_9821",
-  "transport": "ble"
-}
-
+```text
+v1;PROV_A1B2C3;S3_SEC_9821;ble
 ```
 
-* The app parses `name` (the target BLE peripheral) and caches `pop` (the Proof of Possession secret).
+Format breakdown: `<version>;<device_name>;<pop_secret>;<transport>`
+* `v1`: Protocol payload version.
+* `PROV_A1B2C3`: Target BLE peripheral name (`DEVICE_ID`).
+* `S3_SEC_9821`: Proof of Possession PIN (`POP_SECRET`).
+* `ble`: Communication transport (`ble` for Bluetooth Low Energy).
+
+> **Why Semicolon Separation?** Stripping verbose JSON syntax reduces character length by ~59% (71 chars -> 29 chars), halving QR module density from 37×37 down to 25×25 (Version 2). This allows much smaller physical stickers (e.g. 15mm × 15mm) and enables faster, more resilient camera scanning.
+
+* **Legacy JSON Fallback** (also parsed by the mobile app for backwards compatibility):
+```json
+{"ver":"v1","name":"PROV_A1B2C3","pop":"S3_SEC_9821","transport":"ble"}
+```
+
+* The app parses the target peripheral identifier (`PROV_A1B2C3`) and extracts the secret (`S3_SEC_9821`).
 * **Verification:** The app automatically filters BLE scan results and pairs strictly with the peripheral matching `"PROV_A1B2C3"` without showing extraneous Bluetooth devices.
 
 

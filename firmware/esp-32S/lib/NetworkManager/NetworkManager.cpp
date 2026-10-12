@@ -14,8 +14,9 @@ void NetworkManager::onSysProvEvent(arduino_event_t *sys_event) {
       DisplayManager::setProvStatus("Waiting for app...");
       Serial.println(F("[PROV] Provisioning started with BLE scheme"));
       Serial.printf("[PROV] Device Name: %s | PoP PIN: %s\n", getDeviceId(), POP_SECRET);
-      Serial.printf("[PROV] QR Payload: {\"ver\":\"v1\",\"name\":\"%s\",\"pop\":\"%s\",\"transport\":\"ble\"}\n",
-                    getDeviceId(), POP_SECRET);
+      Serial.printf("[PROV] Compact QR Payload: v1;%s;%s;%s\n", getDeviceId(), POP_SECRET, TRANSPORT);
+      Serial.printf("[PROV] Legacy JSON (fallback): {\"ver\":\"v1\",\"name\":\"%s\",\"pop\":\"%s\",\"transport\":\"%s\"}\n",
+                    getDeviceId(), POP_SECRET, TRANSPORT);
       break;
 
     case ARDUINO_EVENT_PROV_CRED_RECV:

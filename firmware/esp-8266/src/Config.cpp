@@ -1,6 +1,7 @@
 #include "Config.h"
 
 // Unified device identifier - change here to update everywhere
+// Compact QR Code payload for sticker: v1;RELAY_8266_NODE;NODE_SEC_4102;lan
 const char *DEVICE_ID = "RELAY_8266_NODE";
 const char *POP_SECRET = "NODE_SEC_4102";
 const char *TRANSPORT = "lan";

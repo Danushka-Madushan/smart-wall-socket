@@ -215,17 +215,70 @@ fun PoPClaimScreen(
     }
 }
 
-private fun extractPopFromInput(input: String): String {
+private data class ParsedQrPayload(
+    val deviceId: String? = null,
+    val popSecret: String,
+    val transport: String? = null
+)
+
+private fun parseQrPayload(input: String): ParsedQrPayload {
     val trimmed = input.trim()
+
+    // 1. Semicolon format: <version>;<device_id>;<pop_secret>;<transport>
+    if (trimmed.contains(";")) {
+        val parts = trimmed.split(";").map { it.trim() }
+        when {
+            // v1;DEVICE_ID;POP_SECRET;transport
+            parts.size >= 4 -> {
+                return ParsedQrPayload(
+                    deviceId = parts[1].ifBlank { null },
+                    popSecret = parts[2],
+                    transport = parts[3].ifBlank { null }
+                )
+            }
+            // DEVICE_ID;POP_SECRET;transport
+            parts.size == 3 -> {
+                return ParsedQrPayload(
+                    deviceId = parts[0].ifBlank { null },
+                    popSecret = parts[1],
+                    transport = parts[2].ifBlank { null }
+                )
+            }
+            // DEVICE_ID;POP_SECRET
+            parts.size == 2 -> {
+                return ParsedQrPayload(
+                    deviceId = parts[0].ifBlank { null },
+                    popSecret = parts[1]
+                )
+            }
+        }
+    }
+
+    // 2. Legacy JSON format fallback: {"ver":"v1","name":"...","pop":"...","transport":"..."} or {"id":"...","pop":"..."}
     if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
         try {
             val json = JSONObject(trimmed)
-            return json.optString("pop", trimmed)
+            val id = json.optString("id", json.optString("name", "")).trim()
+            val pop = json.optString("pop", "").trim()
+            val transport = json.optString("transport", "").trim()
+            if (pop.isNotBlank()) {
+                return ParsedQrPayload(
+                    deviceId = id.ifBlank { null },
+                    popSecret = pop,
+                    transport = transport.ifBlank { null }
+                )
+            }
         } catch (_: Exception) {
-            // Not valid json, return string as is
+            // Not valid json, fallback to raw string
         }
     }
-    return trimmed
+
+    // 3. Raw String fallback (user manually entered or plain QR code containing just the secret)
+    return ParsedQrPayload(popSecret = trimmed)
+}
+
+private fun extractPopFromInput(input: String): String {
+    return parseQrPayload(input).popSecret
 }
 
 private fun parseAndSetPopSecret(
@@ -234,21 +287,13 @@ private fun parseAndSetPopSecret(
     onExtracted: (String) -> Unit,
     onMismatch: (String) -> Unit
 ) {
-    val trimmed = rawPayload.trim()
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-        try {
-            val json = JSONObject(trimmed)
-            val scannedId = json.optString("id", "")
-            if (scannedId.isNotBlank() && scannedId != targetDeviceId) {
-                onMismatch("Notice: QR Code ID ($scannedId) differs from target device ($targetDeviceId)")
-            }
-        } catch (_: Exception) {
-            // Ignore parse errors
-        }
+    val parsed = parseQrPayload(rawPayload)
+    val scannedId = parsed.deviceId
+    if (!scannedId.isNullOrBlank() && scannedId != targetDeviceId) {
+        onMismatch("Notice: QR Code ID ($scannedId) differs from target device ($targetDeviceId)")
     }
-    val pop = extractPopFromInput(rawPayload)
-    if (pop.isNotBlank()) {
-        onExtracted(pop)
+    if (parsed.popSecret.isNotBlank()) {
+        onExtracted(parsed.popSecret)
     }
 }
 
