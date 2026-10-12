@@ -373,7 +373,7 @@ void ApiServer::handleRelayAllPost() {
   sendResponse(200, "application/json", output);
 }
 
-// GET /api/energy (Polled by Android app SocketViewModel)
+// GET /api/energy (Polled by Android app MdnsSwitchViewModel)
 void ApiServer::handleEnergy() {
   TelemetryData snap;
   PowerMonitor::getTelemetry(snap);
