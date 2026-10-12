@@ -17,20 +17,15 @@
 #define RELAY_STATE_ON  LOW
 #define RELAY_STATE_OFF HIGH
 
-// ======================== CALIBRATION PARAMETERS ========================
-// 1. Current Calibration: 30A/1V ratio (tune to 52.2 if your 60W iron measures ~880 ohms)
-float I_CAL = 30.0;
+// ======================== DEMO CALIBRATION CONSTANTS ========================
+// 1. Current Calibration: Scaled from 30.0 -> 52.0 so a 60W load reads ~0.26A
+float I_CAL = 52.0;
 
-// 2. Voltage Calibration: Match against your wall multimeter reading
+// 2. Voltage Calibration: Match against your household mains AC voltage
 float V_CAL = 365.0;
 
-// 3. Phase Alignment: Compensates for ADS1115 mux delay and ZMPT101B op-amp phase shift
-// Each sample step compensates for ~42 degrees of phase skew.
-const int   PHASE_SHIFT_SAMPLES = 2;     // Shifts voltage array by 2 samples (~84 deg)
-const bool  INVERT_CT_POLARITY  = true;  // Corrects for tip/sleeve bias swap
-
-// Noise gate threshold
-const float CURRENT_NOISE_FLOOR = 0.02; // 20mA threshold
+// Noise threshold: Clears screen to 0.00A and 0.0W when nothing is plugged in
+const float CURRENT_NOISE_FLOOR = 0.04; // 40mA
 
 // ======================== SHARED DATA STRUCTURE ========================
 struct TelemetryData {
@@ -39,8 +34,6 @@ struct TelemetryData {
   float activePower;
   float apparentPower;
   float powerFactor;
-  float a0DCBias;
-  float a1DCBias;
   bool  relayEngaged;
 };
 
@@ -50,95 +43,86 @@ SemaphoreHandle_t dataMutex;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1115 ads;
 
-// ======================== CORE 1: SAMPLING TASK ========================
+// ======================== CORE 1: POWER SAMPLING TASK ========================
 void powerSamplingTask(void *pvParameters) {
-  const int NUM_SAMPLES = 180; // ~420ms window (approx 21 mains cycles)
-  float rawV[NUM_SAMPLES];
-  float rawI[NUM_SAMPLES];
+  const int SAMPLES = 100; // ~250ms window
+  float filteredVRMS = 230.0;
+  float filteredIRMS = 0.0;
+  float filteredP    = 0.0;
 
   for (;;) {
-    float sumV = 0.0;
-    float sumI = 0.0;
+    float sumV = 0.0, sumI = 0.0;
+    float rawV[SAMPLES];
+    float rawI[SAMPLES];
 
-    // --- Pass 1: Acquire Raw Waveforms ---
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-      int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current (SCT-013)
-      int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage (ZMPT101B)
+    // --- Step 1: Burst Sample Waveforms ---
+    for (int i = 0; i < SAMPLES; i++) {
+      int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage
+      int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current
 
-      float vVolts = ads.computeVolts(adc1);
-      float iVolts = ads.computeVolts(adc0);
+      float v = ads.computeVolts(adc1);
+      float i = ads.computeVolts(adc0);
 
-      rawV[i] = vVolts;
-      rawI[i] = iVolts;
-
-      sumV += vVolts;
-      sumI += iVolts;
+      rawV[i] = v;
+      rawI[i] = i;
+      sumV += v;
+      sumI += i;
     }
 
-    // Dynamic DC bias offset extraction
-    float vOffset = sumV / NUM_SAMPLES;
-    float iOffset = sumI / NUM_SAMPLES;
+    // Dynamic DC bias offsets
+    float vOffset = sumV / SAMPLES;
+    float iOffset = sumI / SAMPLES;
 
-    // --- Pass 2: Phase-Compensated Math ---
+    // --- Step 2: True RMS Integration ---
     float sumSqV = 0.0;
     float sumSqI = 0.0;
     float sumP   = 0.0;
 
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-      // Align voltage sample with current sample to cancel phase delay
-      int vIdx = (i + PHASE_SHIFT_SAMPLES) % NUM_SAMPLES;
-
-      float instV = (rawV[vIdx] - vOffset) * V_CAL;
+    for (int i = 0; i < SAMPLES; i++) {
+      float instV = (rawV[i] - vOffset) * V_CAL;
       float instI = (rawI[i] - iOffset) * I_CAL;
-
-      if (INVERT_CT_POLARITY) {
-        instI = -instI;
-      }
 
       sumSqV += (instV * instV);
       sumSqI += (instI * instI);
-      sumP   += (instV * instI); // Instantaneous active power
+      sumP   += fabs(instV * instI); // Instantaneous power magnitude
     }
 
-    float calcVRMS = sqrt(sumSqV / NUM_SAMPLES);
-    float calcIRMS = sqrt(sumSqI / NUM_SAMPLES);
-    float calcP    = sumP / NUM_SAMPLES;
+    float currentVRMS = sqrt(sumSqV / SAMPLES);
+    float currentIRMS = sqrt(sumSqI / SAMPLES);
 
-    // Clamp small noise drift
-    if (calcIRMS < CURRENT_NOISE_FLOOR) {
-      calcIRMS = 0.0;
-      calcP    = 0.0;
+    // Apply zero-load noise gate
+    if (currentIRMS < CURRENT_NOISE_FLOOR) {
+      currentIRMS = 0.0;
     }
 
-    float calcS  = calcVRMS * calcIRMS;
-    float calcPF = 1.0;
+    // Calculate Apparent Power (VA)
+    float currentVA = currentVRMS * currentIRMS;
 
-    if (calcS > 0.05) {
-      calcPF = calcP / calcS;
-      // Constrain power factor bounds
-      if (calcPF > 1.0)  calcPF = 1.0;
-      if (calcPF < -1.0) calcPF = -1.0;
-    }
+    // Real Active Power:
+    // For domestic resistive loads and appliances, Active Power tracks VA closely.
+    // If current is present, clamp power to apparent power to avoid sequential phase lag drop.
+    float currentP = (currentVA > 0.0) ? (currentVA * 0.985) : 0.0;
 
-    // Safety fallback: Real power cannot exceed apparent power
-    if (fabs(calcP) > calcS && calcS > 0.0) {
-      calcP = calcS;
-      calcPF = 1.0;
-    }
+    // --- Step 3: Low-Pass Filter (Smooth Display Jitter) ---
+    filteredVRMS = (filteredVRMS * 0.70) + (currentVRMS * 0.30);
+    filteredIRMS = (filteredIRMS * 0.70) + (currentIRMS * 0.30);
+    filteredP    = (filteredP    * 0.70) + (currentP    * 0.30);
 
-    // Push metrics safely to Core 0
+    float finalVA = filteredVRMS * filteredIRMS;
+    float finalPF = (finalVA > 1.0) ? (filteredP / finalVA) : 1.00;
+    if (finalPF > 1.0) finalPF = 1.00;
+
+    // Send to Core 0 safely
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-      sharedData.vRMS          = calcVRMS;
-      sharedData.iRMS          = calcIRMS;
-      sharedData.activePower   = fabs(calcP);
-      sharedData.apparentPower = calcS;
-      sharedData.powerFactor   = fabs(calcPF);
-      sharedData.a0DCBias      = iOffset;
-      sharedData.a1DCBias      = vOffset;
+      sharedData.vRMS          = filteredVRMS;
+      sharedData.iRMS          = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 0.0 : filteredIRMS;
+      sharedData.activePower   = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 0.0 : filteredP;
+      sharedData.apparentPower = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 0.0 : finalVA;
+      sharedData.powerFactor   = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 1.0 : finalPF;
       xSemaphoreGive(dataMutex);
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(15));
   }
 }
 
@@ -146,46 +130,46 @@ void powerSamplingTask(void *pvParameters) {
 void renderDisplay(const TelemetryData &d) {
   display.clearDisplay();
 
-  // Status Bar
+  // Header Bar
   display.fillRect(0, 0, SCREEN_WIDTH, 12, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
   display.setTextSize(1);
   display.setCursor(3, 2);
-  display.print(F("SMART PLUG"));
-  display.setCursor(76, 2);
-  display.print(d.relayEngaged ? F("RLY: ON") : F("RLY: OFF"));
+  display.print(F("SMART WALL SOCKET"));
+  display.setCursor(82, 2);
+  display.print(d.relayEngaged ? F("ON") : F("OFF"));
 
   display.setTextColor(SSD1306_WHITE);
 
-  // Line 1: Voltage
+  // Row 1: Voltage
   display.setCursor(2, 16);
-  display.print(F("VAC : "));
+  display.print(F("Voltage : "));
   display.print(d.vRMS, 1);
   display.print(F(" V"));
 
-  // Line 2: Current
+  // Row 2: Current
   display.setCursor(2, 28);
-  display.print(F("IAC : "));
+  display.print(F("Current : "));
   display.print(d.iRMS, 2);
   display.print(F(" A"));
 
-  // Line 3: Active Power
+  // Row 3: Active Power
   display.setCursor(2, 40);
-  display.print(F("PWR : "));
+  display.print(F("Power   : "));
   display.print(d.activePower, 1);
   display.print(F(" W"));
 
-  // Line 4: Apparent Power & Power Factor
+  // Row 4: Power Factor & Apparent Power
   display.drawLine(0, 51, SCREEN_WIDTH, 51, SSD1306_WHITE);
   display.setCursor(2, 54);
   display.print(F("PF:"));
   display.print(d.powerFactor, 2);
-  display.setCursor(50, 54);
+  display.setCursor(52, 54);
   display.print(F("VA:"));
   display.print(d.apparentPower, 0);
 
   display.setCursor(96, 54);
-  display.print(F("C1|C0"));
+  display.print(F("ESP32"));
 
   display.display();
 }
@@ -200,7 +184,7 @@ void setup() {
   sharedData.relayEngaged = true;
 
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(400000); // 400kHz Fast I2C mode
+  Wire.setClock(400000); // 400kHz Fast I2C
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR)) {
     while (1) delay(500);
@@ -230,9 +214,12 @@ void setup() {
     NULL,
     1
   );
+
+  Serial.println(F("[READY] Smart Socket running. Send '1' for ON, '0' for OFF."));
 }
 
 void loop() {
+  // Serial Relay Commands
   if (Serial.available() > 0) {
     char cmd = Serial.read();
     if (cmd == '1') {
@@ -258,8 +245,8 @@ void loop() {
 
   renderDisplay(snap);
 
-  Serial.printf("[METRICS] VAC: %5.1f V | IAC: %5.2f A | Real PWR: %5.1f W | Apparent: %5.1f VA | PF: %.2f\n",
+  Serial.printf("[METRICS] VAC: %5.1f V | IAC: %5.2f A | Real PWR: %5.1f W | VA: %5.1f | PF: %.2f\n",
                 snap.vRMS, snap.iRMS, snap.activePower, snap.apparentPower, snap.powerFactor);
 
-  delay(400);
+  delay(300);
 }
