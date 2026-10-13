@@ -35,15 +35,17 @@ extern float I_CAL;
 extern const float CURRENT_NOISE_FLOOR;
 
 // =====================================================================
-//  DEVICE & BLE PROVISIONING (PoP) CONFIGURATION
+//  DEVICE & LAN PROVISIONING (PoP) CONFIGURATION
 // =====================================================================
 extern const char *POP_SECRET;
 extern const char *TRANSPORT;
 extern const int SWITCH_COUNT;
 extern const bool HAS_ENERGY;
 extern const size_t MAX_PAYLOAD_SIZE;
+extern const char *WIFI_SSID;
+extern const char *WIFI_PASS;
 
-// Unified Device ID - static string for label printing & BLE provisioning
+// Unified Device ID - static string for label printing & mDNS identification
 extern const char *DEVICE_ID;
 const char *getDeviceId();
 

@@ -31,8 +31,8 @@ python -m http.server 8080
 ## ⚡ Key Features
 
 - **Hardware Presets**:
-  - **ESP32-S Smart Wall Socket**: Auto-fills `RELAY_32S_NODE`, PoP PIN `S3_SEC_9821`, Transport `ble` (FreeRTOS Core 1 Energy Monitoring, Single Inverted Relay).
-  - **ESP8266 2-Channel Switch**: Auto-fills `ESP_SWITCH_2CH`, PoP PIN `NODE_SEC_4102`, Transport `lan` (Dual Relays, mDNS Discovery).
+  - **ESP32-S Smart Wall Socket**: Auto-fills `RELAY_32S_NODE`, PoP PIN `S3_SEC_9821`, Transport `lan` (Synthetic Core 1 Energy Monitoring, Single Inverted Relay).
+  - **ESP8266 2-Channel Switch**: Auto-fills `RELAY_8266_NODE`, PoP PIN `NODE_SEC_4102`, Transport `lan` (Dual Relays, mDNS Discovery).
   - **Custom Node**: User-defined device identifiers and secret keys.
 - **Protocol Encodings**:
   - **Compact Semicolon (SSV)**: `v1;<device_id>;<pop_secret>;<transport>` (Recommended default recognized by the SocketMan Android app).

@@ -228,7 +228,7 @@ fun PoPClaimScreen(
                     targetDeviceId = targetDevice.id,
                     switches = targetDevice.switches,
                     hasEnergy = targetDevice.energy,
-                    transport = if (targetDevice.energy) "ble" else "lan"
+                    transport = targetDevice.transport.ifBlank { "lan" }
                 ) { success, msg ->
                     Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                     if (success) {

@@ -95,7 +95,7 @@ fun MdnsHomeScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Tap '+ Add Device' to discover local mDNS nodes or provision new ESP32-S energy sockets over BLE.",
+                        text = "Tap '+ Add Device' to discover smart sockets on your Wi-Fi network.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 32.dp)

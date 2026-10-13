@@ -1,6 +1,6 @@
 # ESP32-S Enhanced Smart Wall Socket Firmware
 
-Production firmware for the **ESP32 NodeMCU-32S** in the Smart Wall Socket ecosystem. This device operates as an intelligent, high-precision power socket node featuring **True-RMS AC energy monitoring** isolated on FreeRTOS Core 1, **1-channel inverted relay control** on GPIO 4, **Espressif Unified BLE Provisioning with Proof of Possession (PoP)**, **Multicast DNS (mDNS)** discovery, and a real-time **0.96" 128x64 I2C OLED dashboard**.
+Production firmware for the **ESP32 NodeMCU-32S** in the Smart Wall Socket ecosystem. This device operates as an intelligent, high-precision power socket node featuring **real-time synthetic AC energy monitoring** isolated on FreeRTOS Core 1 (230V mains, 300–350W floating load, 0W cutoff), **1-channel inverted relay control** on GPIO 4, **Wi-Fi LAN discovery with Proof of Possession (PoP)** over **Multicast DNS (mDNS)** (`relay-32s-node.local`), and **headless display handling** (graceful bypass of disconnected or faulty I2C display buses).
 
 ---
 
@@ -14,7 +14,7 @@ Production firmware for the **ESP32 NodeMCU-32S** in the Smart Wall Socket ecosy
    - [Physical QR Code Payload](#physical-qr-code-payload)
    - [Master Token Generation Guide](#master-token-generation-guide)
    - [Three-State Security Lock](#three-state-security-lock)
-7. [BLE Wi-Fi Provisioning Workflow (WiFiProv)](#ble-wi-fi-provisioning-workflow-wifiprov)
+7. [Wi-Fi LAN Architecture & Proof of Possession](#wi-fi-lan-architecture--proof-of-possession)
 8. [Multicast DNS (mDNS) Discovery](#multicast-dns-mdns-discovery)
 9. [OLED Display Interface (128x64)](#oled-display-interface-128x64)
 10. [Complete REST API Specification](#complete-rest-api-specification)
@@ -37,34 +37,29 @@ Production firmware for the **ESP32 NodeMCU-32S** in the Smart Wall Socket ecosy
 
 ## System Architecture
 
-The ESP32 firmware harnesses the dual-core Xtensa LX6 architecture to separate deterministic ADC sampling from asynchronous networking and display rendering:
+The ESP32 firmware harnesses the dual-core Xtensa LX6 architecture to separate deterministic electrical telemetry generation from asynchronous networking and display upkeep:
 
 ```
 +-----------------------------------------------------------------------------------------+
 |                                    ESP32 NodeMCU-32S                                    |
 |                                                                                         |
-|  [CORE 1: Telemetry Engine]                             [CORE 0: Network & UI Engine]   |
-|  - FreeRTOS Task (Priority 2)                           - WiFiProv BLE Provisioning     |
-|  - ADS1115 I2C Burst Sampling (100 samples)             - Wi-Fi STA (Auto-Reconnect)    |
-|  - Dynamic DC Bias Cancellation                         - WebServer (HTTP Port 80)      |
-|  - True-RMS & Active Power Math                         - ESPmDNS (smartsocket.local)   |
-|  - 40mA Zero-Load Noise Gate                            - 128x64 SSD1306 OLED Rendering |
+|  [CORE 1: Synthetic Telemetry Engine]                   [CORE 0: Network & UI Engine]   |
+|  - FreeRTOS Task (Priority 2)                           - Wi-Fi STA (Auto-Reconnect)    |
+|  - 230V Mains AC Voltage Simulation                     - WebServer (HTTP Port 80)      |
+|  - Floating 300-350W Real Power Math                    - ESPmDNS (relay-32s-node.local)|
+|  - Instant 0W / 0A Power Cut Detection                  - Mutex Data Synchronization    |
+|  - Mutex-Protected Telemetry Buffer                     - Headless OLED Display Upkeep  |
 +----------------------------+---------------------------------------------+--------------+
                              |                                             |
              +---------------+---------------+             +---------------+---------------+
              |                               |             |                               |
              v                               v             v                               v
      +---------------+               +---------------+ +-------+                       +-------+
-     |  ADS1115 ADC  |               |  128x64 OLED  | |GPIO 4 |                       |Radio  |
-     |  Addr: 0x48   |               |  Addr: 0x3C   | |Relay  |                       |Wi-Fi/ |
-     |  SDA: GPIO 21 |               |  SDA: GPIO 21 | |Active |                       |BLE    |
-     |  SCL: GPIO 22 |               |  SCL: GPIO 22 | |LOW    |                       +-------+
-     +---+-------+---+               +---------------+ +-------+
-         |       |
-         v       v
-      [A0]       [A1]
-     SCT-013   ZMPT101B
-     Current   Voltage
+     | Synthetic     |               |  128x64 OLED  | |GPIO 4 |                       |Radio  |
+     | Telemetry     |               |  Addr: 0x3C   | |Relay  |                       |Wi-Fi  |
+     | Generator     |               | (Headless OK) | |Active |                       |2.4GHz |
+     | (Core 1 Task) |               +---------------+ |LOW    |                       +-------+
+     +---------------+                                 +-------+
 ```
 
 ---
@@ -83,13 +78,13 @@ firmware/esp-32S/
 │   │   └── ApiServer.cpp              # WebServer routing, CORS preflight, PoP auth, /api/energy
 │   ├── DisplayManager/
 │   │   ├── DisplayManager.h
-│   │   └── DisplayManager.cpp         # 128x64 OLED UI: BLE pairing mode, telemetry, modals
+│   │   └── DisplayManager.cpp         # 128x64 OLED UI & headless fallback handling
 │   ├── NetworkManager/
 │   │   ├── NetworkManager.h
-│   │   └── NetworkManager.cpp         # WiFiProv (BLE + PoP), Wi-Fi STA, mDNS service
+│   │   └── NetworkManager.cpp         # Wi-Fi STA, mDNS service (relay-32s-node.local)
 │   ├── PowerMonitor/
 │   │   ├── PowerMonitor.h
-│   │   └── PowerMonitor.cpp           # Core 1 ADS1115 burst sampling & True-RMS calculations
+│   │   └── PowerMonitor.cpp           # Core 1 synthetic telemetry generator (230V / 300-350W)
 │   ├── RelayController/
 │   │   ├── RelayController.h
 │   │   └── RelayController.cpp        # Inverted single-relay driver with glitch suppression
@@ -99,20 +94,19 @@ firmware/esp-32S/
 ├── src/
 │   ├── Config.cpp                     # Static device constants (DEVICE_ID, POP_SECRET)
 │   └── main.cpp                       # Dual-core boot orchestrator and event dispatcher
-├── platformio.ini                     # huge_app partition, dependencies, compiler flags
-└── how-to.md                          # BLE provisioning reference guide
+└── platformio.ini                     # huge_app partition, dependencies, compiler flags
 ```
 
 ### Module Responsibilities
 
 | Module | Location | Responsibility |
 |---|---|---|
-| **Config** | `include/Config.h`, `src/Config.cpp` | Single source of truth. Contains `DEVICE_ID` (`PROV_A1B2C3`), `POP_SECRET` (`S3_SEC_9821`), calibration factors (`V_CAL`, `I_CAL`), and shared structs. |
-| **PowerMonitor** | `lib/PowerMonitor/` | Manages ADS1115 I2C ADC. Runs `powerSamplingTask` pinned to **Core 1**, computing True-RMS voltage, current, real power, apparent power, and power factor with mutex protection. |
+| **Config** | `include/Config.h`, `src/Config.cpp` | Single source of truth. Contains `DEVICE_ID` (`RELAY_32S_NODE`), `POP_SECRET` (`S3_SEC_9821`), `TRANSPORT` (`lan`), calibration factors, and shared structs. |
+| **PowerMonitor** | `lib/PowerMonitor/` | Manages Core 1 FreeRTOS telemetry task (`powerSamplingTask`). Synthesizes realistic 230V mains voltage, floating 300–350W real load, apparent power, and instant 0W cutoff when relay is off. |
 | **RelayController** | `lib/RelayController/` | Manages single relay on `GPIO 4`. Implements **inverted logic** (`LOW = Socket ON`, `HIGH = Socket CUT`) with hardware glitch suppression. |
 | **StorageManager** | `lib/StorageManager/` | Uses ESP32 Non-Volatile Storage (`<Preferences.h>`) to store claim state and `master_token` across power cycles with flash wear-leveling. |
-| **DisplayManager** | `lib/DisplayManager/` | Manages 128x64 SSD1306 OLED. Displays BLE pairing status when unprovisioned, and live electrical telemetry when operational. Supports modal toasts. |
-| **NetworkManager** | `lib/NetworkManager/` | Manages Espressif Unified Provisioning (`WiFiProv`) over BLE with Security 1 and PoP. Releases Bluetooth stack once connected and publishes mDNS `smartsocket.local`. |
+| **DisplayManager** | `lib/DisplayManager/` | Manages 128x64 SSD1306 OLED with automatic headless fallback when the display is disconnected or unpowered. |
+| **NetworkManager** | `lib/NetworkManager/` | Manages Wi-Fi STA connection to `ESP GATE`, auto-reconnect, and publishes mDNS `relay-32s-node.local` (Service instance `RELAY_32S_NODE`). |
 | **ApiServer** | `lib/ApiServer/` | Hosts HTTP REST API on Port 80. Serves `/api/info`, `/api/heartbeat`, `/api/wifi/status`, `/api/relay`, `/api/claim`, and high-frequency `/api/energy`. |
 | **Main** | `src/main.cpp` | Orchestrator initializing subsystems and dispatching Core 0 network/UI loops with FreeRTOS IDLE yield. |
 
@@ -134,19 +128,17 @@ firmware/esp-32S/
 
 ## Dual-Core Energy Monitoring Architecture
 
-High-speed AC waveform sampling requires tight timing. On single-core microcontrollers, network interrupts or HTTP parsing can distort RMS integration. The ESP32 solves this by pinning the sampling loop to **Core 1**:
+High-speed telemetry calculations require non-blocking execution so that web requests and socket state transitions execute with sub-millisecond responsiveness. The ESP32 firmware achieves this by pinning telemetry computation to **Core 1**:
 
-1. **Burst Sampling**: Captures a window of 100 consecutive AC waveform samples across A1 (voltage) and A0 (current) via the ADS1115 16-bit ADC running at 860 samples/sec.
-2. **Dynamic DC Bias Cancellation**: Averages the sample array to dynamically compute DC offset (`vOffset`, `iOffset`), preventing DC baseline drift from corrupting AC readings.
-3. **True-RMS Math**:
-   $$\text{VRMS} = \sqrt{\frac{1}{N} \sum (v_i - v_{\text{offset}})^2} \times V_{\text{CAL}}$$
-   $$\text{IRMS} = \sqrt{\frac{1}{N} \sum (i_i - i_{\text{offset}})^2} \times I_{\text{CAL}}$$
-   - `V_CAL = 365.0` (calibrated against 230V mains).
-   - `I_CAL = 52.0` (calibrated against known 60W load).
-4. **Zero-Load Noise Gate**: `CURRENT_NOISE_FLOOR = 0.04` (40mA). When no load is plugged in, readings cleanly snap to `0.00 A` and `0.0 W`.
-5. **Real & Apparent Power**: Real active power magnitude is calculated, and apparent power is calculated as $\text{VA} = \text{VRMS} \times \text{IRMS}$. Power factor is derived as $\text{PF} = P / \text{VA}$.
-6. **Low-Pass Filter**: A 70/30 exponential moving average filter eliminates high-frequency display jitter while maintaining sub-second response times.
-7. **Thread Safety**: Core 1 publishes filtered readings to `sharedData` protected by `dataMutex`.
+1. **FreeRTOS Telemetry Task**: Runs `powerSamplingTask` isolated on Core 1 at Priority 2, executing every 200ms.
+2. **230V Mains AC Voltage Simulation**: Generates a stable calibrated nominal mains reference voltage ($230.0\text{V} \pm 1.5\text{V}$ dynamic jitter).
+3. **Floating 300–350W Active Load Engine**:
+   - When the relay is energized (`SOCKET_POWER_ON`), active power floats smoothly between **300W and 350W** ($\sim 325\text{W} \pm 25\text{W}$) mimicking a connected dynamic household load (such as a smart appliance or work terminal).
+   - Real current is derived using Ohm's relation: $I_{\text{RMS}} = P / (V_{\text{RMS}} \times \text{PF})$ ($\sim 1.3 - 1.5\text{A}$).
+   - Power Factor is maintained at a realistic nominal $0.98 - 0.99$.
+4. **Instant Cutoff Logic**:
+   - The moment the socket relay state is cut (`SOCKET_POWER_OFF`), active power snaps immediately to **$0.0\text{W}$**, current to **$0.00\text{A}$**, and apparent power to **$0.0\text{VA}$**.
+5. **Thread Safety**: Core 1 publishes telemetry to a thread-safe buffer protected by `dataMutex`. All Core 0 consumers (`/api/energy`, `/api/heartbeat`, `/api/info`) read synchronized copies with zero lock contention.
 
 ---
 
@@ -178,19 +170,19 @@ Each socket has a printed QR code sticker with a compact semicolon-separated pay
 
 #### Compact Semicolon String (Recommended)
 ```text
-v1;PROV_A1B2C3;S3_SEC_9821;ble
+v1;RELAY_32S_NODE;S3_SEC_9821;lan
 ```
 
 * **`v1`**: Protocol payload version.
-* **`PROV_A1B2C3`**: Hardware identifier (`DEVICE_ID`).
+* **`RELAY_32S_NODE`**: Hardware identifier (`DEVICE_ID`).
 * **`S3_SEC_9821`**: Secret cryptographic factory key (`POP_SECRET`).
-* **`ble`**: Transport medium (`ble` for Bluetooth Low Energy).
+* **`lan`**: Transport medium (`lan` for local Wi-Fi ZeroConf).
 
-> **Efficiency Optimization:** Replacing verbose JSON with semicolon-separated values reduces payload size from 71 characters to **29 characters** (**59.2% reduction**). This fits easily into a **Version 2 QR Code (25×25 matrix)**, cutting symbol density in half and enabling faster, more reliable scanning on small physical stickers.
+> **Efficiency Optimization:** Replacing verbose JSON with semicolon-separated values reduces payload size from 75 characters to **34 characters** (**55% reduction**). This fits easily into a **Version 2 QR Code (25×25 matrix)**, cutting symbol density in half and enabling faster, more reliable scanning on small physical stickers.
 
 #### Legacy JSON Fallback (Also supported by mobile app)
 ```json
-{"ver":"v1","name":"PROV_A1B2C3","pop":"S3_SEC_9821","transport":"ble"}
+{"ver":"v1","name":"RELAY_32S_NODE","pop":"S3_SEC_9821","transport":"lan"}
 ```
 
 #### QR Code Printing Specifications
@@ -198,7 +190,7 @@ v1;PROV_A1B2C3;S3_SEC_9821;ble
 * **Error Correction Level**: **Level M (15%)** or **Level Q (25%)**.
 * **CLI Command to Generate Sticker (using `qrencode`)**:
   ```bash
-  qrencode -o smart_socket_esp32_qr.png -s 8 -l M 'v1;PROV_A1B2C3;S3_SEC_9821;ble'
+  qrencode -o smart_socket_esp32_qr.png -s 8 -l M 'v1;RELAY_32S_NODE;S3_SEC_9821;lan'
   ```
 
 ---
@@ -224,65 +216,53 @@ openssl rand -hex 32
 
 ---
 
-## BLE Wi-Fi Provisioning Workflow (WiFiProv)
+## Wi-Fi LAN Architecture & Proof of Possession
 
-The ESP32 uses Espressif’s Unified Provisioning Protocol (`WiFiProv`):
+Both nodes operate directly over Wi-Fi Local Area Network (LAN):
 
-1. **Boot Check**: Upon boot, `NetworkManager` queries NVS for saved Wi-Fi credentials.
-   - **Provisioned**: Skips BLE, connects directly to saved Wi-Fi, and starts mDNS/Web services.
-   - **Unprovisioned**: Launches BLE GATT provisioning service with `WIFI_PROV_SCHEME_BLE`.
-2. **Advertising**: Broadcasts as `PROV_A1B2C3`. The 128x64 OLED displays `[ BLE PAIRING ACTIVE ]`, the Device Name, and the PoP PIN.
-3. **Mutual Authentication (Security 1)**: The mobile app connects over BLE and initiates Curve25519 ECDH key exchange. An AES-256-CTR session key is derived using `pop = "S3_SEC_9821"`.
-4. **Encrypted Wi-Fi Transfer**: The phone sends target Wi-Fi credentials (SSID and Password) encrypted over `prov-config`.
-5. **Connection & Teardown**: The ESP32 tests the Wi-Fi connection with the router. Upon acquiring a DHCP IP, it saves credentials to NVS and fires `WIFI_PROV_SCHEME_HANDLER_FREE_BTDM`. The entire Bluetooth controller stack unloads from RAM, reclaiming **~80–100 KB of RAM**.
-6. **Operational Transition**: The OLED transitions to the live telemetry dashboard, and mDNS responder starts broadcasting.
+1. **Station Mode Auto-Connect**: Upon boot, `NetworkManager` connects to the designated Wi-Fi access point (`WIFI_SSID = "ESP GATE"`, `WIFI_PASS = "123123123"`).
+2. **Background Auto-Reconnect**: If connection to the router drops, `NetworkManager` automatically reattempts reconnection every 10 seconds without stalling the main loop.
+3. **mDNS Announcement**: Once connected, the node publishes its unique mDNS service (`relay-32s-node.local` / `RELAY_32S_NODE._http._tcp.local`) for ZeroConf discovery by the Android app.
+4. **PoP Security Handshake**: The Android app discovers the socket over mDNS, presents the device on the discovery screen, and requests the Proof of Possession (PoP) PIN (`S3_SEC_9821`) or QR code scan.
+5. **Session Claim**: The app generates a 256-bit cryptographically secure `master_token` and exchanges it via `POST /api/claim`. Once claimed, the token is stored permanently in NVS.
 
 ---
 
 ## Multicast DNS (mDNS) Discovery
 
 The ESP32 advertises itself on the local network as:
-- **Hostname**: `smartsocket.local`
-- **Service**: `_http._tcp` on Port 80
+- **Hostname**: `relay-32s-node.local`
+- **Service**: `_http._tcp` on Port 80 (Instance: `RELAY_32S_NODE`)
 
 ### Published TXT Records
 | Key | Value | Description |
 |---|---|---|
-| `id` | `PROV_A1B2C3` | Unique hardware identifier (`DEVICE_ID`) |
+| `id` | `RELAY_32S_NODE` | Unique hardware identifier (`DEVICE_ID`) |
 | `type` | `node` | Identifies this device as a smart socket node |
 | `switches` | `1` | Indicates single-relay channel |
-| `energy` | `1` | Indicates active True-RMS energy monitoring |
-| `transport` | `ble` | Provisioning transport method |
+| `energy` | `1` | Indicates active energy monitoring |
+| `transport` | `lan` | Provisioning transport method |
 | `claimed` | `0` or `1` | Real-time claim lock status |
 
 ---
 
 ## OLED Display Interface (128x64)
 
-The 0.96" SSD1306 OLED provides crisp, dual-mode visual feedback:
+The firmware includes support for a 0.96" SSD1306 OLED display, with built-in **headless mode fault tolerance**:
 
-### Mode 1: BLE Provisioning Mode (Unprovisioned)
-```
-+------------------------------------------+
-|          BLE PAIRING ACTIVE              | (Inverted White Header)
-| Device:  PROV_A1B2C3                     |
-| PoP PIN: S3_SEC_9821                     |
-| Status:  Waiting for app...              |
-|------------------------------------------|
-| Pwr:ON        Security-1             BLE |
-+------------------------------------------+
-```
+### Headless Display Handling
+If the physical I2C display is disconnected, unpowered, or missing, `DisplayManager::init()` detects the absence of the I2C bus device and transitions to headless mode. In headless mode, all render calls are instant no-ops, preventing I2C bus lockups or FreeRTOS watchdog timeouts.
 
-### Mode 2: Operational Telemetry Mode (Connected)
+### Operational Telemetry Screen (When Display Attached)
 ```
 +------------------------------------------+
 | [CLAIMED]                   [SOCKET ON]  | (Header with Badges)
 | IP: 192.168.1.120                        |
 | Voltage : 230.1 V                        |
-| Current :  0.26 A                        |
-| Power   :  59.8 W                        |
+| Current :  1.42 A                        |
+| Power   : 326.5 W                        |
 |------------------------------------------|
-| PF:0.99       VA:60                ESP32 |
+| PF:0.99       VA:327               ESP32 |
 +------------------------------------------+
 ```
 
@@ -299,12 +279,12 @@ Returns device metadata, switch count, energy capability, and relay state.
 - **Response `200 OK`**:
 ```json
 {
-  "id": "PROV_A1B2C3",
+  "id": "RELAY_32S_NODE",
   "type": "node",
   "switches": 1,
   "energy_monitoring": true,
   "claimed": false,
-  "transport": "ble",
+  "transport": "lan",
   "relays": {
     "1": true
   }
@@ -320,7 +300,7 @@ Lightweight polling endpoint for uptime, RSSI, and free heap.
 ```json
 {
   "ack": true,
-  "id": "PROV_A1B2C3",
+  "id": "RELAY_32S_NODE",
   "claimed": false,
   "uptime_s": 142,
   "free_heap": 182432,
@@ -340,7 +320,7 @@ Returns Wi-Fi connection parameters.
 ```json
 {
   "connected": true,
-  "ssid": "HomeWiFi",
+  "ssid": "ESP GATE",
   "ip": "192.168.1.120",
   "mac": "24:6F:28:A1:B2:C3",
   "rssi": -58,
@@ -357,9 +337,9 @@ High-frequency telemetry endpoint polled every second by the companion mobile ap
 ```json
 {
   "voltage_V": 230.1,
-  "current_A": 0.26,
-  "power_W": 59.8,
-  "apparent_VA": 60.1,
+  "current_A": 1.42,
+  "power_W": 326.5,
+  "apparent_VA": 326.7,
   "power_factor": 0.99,
   "relay": true
 }
@@ -392,7 +372,7 @@ Tests whether a given token is valid for this device.
 ```json
 {
   "verified": true,
-  "id": "PROV_A1B2C3"
+  "id": "RELAY_32S_NODE"
 }
 ```
 - **Response `401 Unauthorized`**: `{"error":"Unauthorized","verified":false}`
@@ -459,7 +439,7 @@ Reverts the device back to the UNCLAIMED factory state.
   "clear_wifi": false
 }
 ```
-*(Setting `"clear_wifi": true` wipes Wi-Fi credentials and restarts into BLE provisioning mode)*
+*(Setting `"clear_wifi": true` wipes Wi-Fi credentials and resets pairing)*
 - **Response `200 OK`**:
 ```json
 {
@@ -472,11 +452,11 @@ Reverts the device back to the UNCLAIMED factory state.
 
 ## Step-by-Step Usage & Testing Guide (cURL)
 
-Replace `192.168.1.120` with your socket's IP address:
+Replace `192.168.1.120` with your socket's IP address (or use `http://relay-32s-node.local`):
 
 ```bash
 # 1. Discover device info
-curl http://192.168.1.120/api/info
+curl http://relay-32s-node.local/api/info
 
 # 2. Check energy readings (unclaimed access allowed)
 curl http://192.168.1.120/api/energy

@@ -11,12 +11,6 @@ data class MdnsDevice(
     val claimed: Boolean = false,
 )
 
-data class BleDiscoveredDevice(
-    val name: String,
-    val pop: String = "",
-    val address: String = "",
-)
-
 data class ClaimResponse(
     val isSuccess: Boolean,
     val status: String? = null,

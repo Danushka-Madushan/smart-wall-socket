@@ -1,7 +1,5 @@
 #include "PowerMonitor.h"
-#include <Wire.h>
 
-Adafruit_ADS1115 PowerMonitor::ads;
 TelemetryData PowerMonitor::sharedData = {230.0f, 0.0f, 0.0f, 0.0f, 1.0f, true};
 SemaphoreHandle_t PowerMonitor::dataMutex = nullptr;
 
@@ -12,14 +10,7 @@ bool PowerMonitor::init() {
     return false;
   }
 
-  if (!ads.begin(ADS_I2C_ADDR)) {
-    Serial.println(F("[POWER] ERROR: ADS1115 not found at 0x48!"));
-    return false;
-  }
-
-  ads.setGain(GAIN_ONE);
-  ads.setDataRate(RATE_ADS1115_860SPS);
-
+  // Pin synthetic telemetry generator to Core 1
   xTaskCreatePinnedToCore(
     powerSamplingTask,
     "PowerSamplingTask",
@@ -30,7 +21,7 @@ bool PowerMonitor::init() {
     1 // Pin strictly to Core 1
   );
 
-  Serial.println(F("[POWER] ADS1115 initialized & sampling task pinned to Core 1."));
+  Serial.println(F("[POWER] Synthetic power telemetry engine initialized & pinned to Core 1."));
   return true;
 }
 
@@ -53,81 +44,59 @@ void PowerMonitor::setRelayState(bool engaged) {
 }
 
 void PowerMonitor::powerSamplingTask(void *pvParameters) {
-  const int SAMPLES = 100; // ~250ms window
-  float filteredVRMS = 230.0;
-  float filteredIRMS = 0.0;
-  float filteredP    = 0.0;
+  float smoothedPower = 325.0f;
+  float smoothedVoltage = 230.0f;
 
   for (;;) {
-    float sumV = 0.0, sumI = 0.0;
-    float rawV[SAMPLES];
-    float rawI[SAMPLES];
-
-    // --- Step 1: Burst Sample Waveforms ---
-    for (int idx = 0; idx < SAMPLES; idx++) {
-      int16_t adc1 = ads.readADC_SingleEnded(1); // A1: Voltage
-      int16_t adc0 = ads.readADC_SingleEnded(0); // A0: Current
-
-      float vVolts = ads.computeVolts(adc1);
-      float iVolts = ads.computeVolts(adc0);
-
-      rawV[idx] = vVolts;
-      rawI[idx] = iVolts;
-      sumV += vVolts;
-      sumI += iVolts;
-    }
-
-    // Dynamic DC bias offsets
-    float vOffset = sumV / SAMPLES;
-    float iOffset = sumI / SAMPLES;
-
-    // --- Step 2: True RMS Integration ---
-    float sumSqV = 0.0;
-    float sumSqI = 0.0;
-    float sumP   = 0.0;
-
-    for (int idx = 0; idx < SAMPLES; idx++) {
-      float instV = (rawV[idx] - vOffset) * V_CAL;
-      float instI = (rawI[idx] - iOffset) * I_CAL;
-
-      sumSqV += (instV * instV);
-      sumSqI += (instI * instI);
-      sumP   += fabs(instV * instI); // Instantaneous power magnitude
-    }
-
-    float currentVRMS = sqrt(sumSqV / SAMPLES);
-    float currentIRMS = sqrt(sumSqI / SAMPLES);
-
-    // Apply zero-load noise gate
-    if (currentIRMS < CURRENT_NOISE_FLOOR) {
-      currentIRMS = 0.0;
-    }
-
-    // Calculate Apparent Power (VA)
-    float currentVA = currentVRMS * currentIRMS;
-
-    // Real Active Power calculation for display
-    float currentP = (currentVA > 0.0) ? (currentVA * 0.985) : 0.0;
-
-    // --- Step 3: Low-Pass Filter (Smooth Display Jitter) ---
-    filteredVRMS = (filteredVRMS * 0.70) + (currentVRMS * 0.30);
-    filteredIRMS = (filteredIRMS * 0.70) + (currentIRMS * 0.30);
-    filteredP    = (filteredP    * 0.70) + (currentP    * 0.30);
-
-    float finalVA = filteredVRMS * filteredIRMS;
-    float finalPF = (finalVA > 1.0) ? (filteredP / finalVA) : 1.00;
-    if (finalPF > 1.0) finalPF = 1.00;
-
-    // Send to Core 0 safely
+    bool relayOn = true;
     if (dataMutex && xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-      sharedData.vRMS          = filteredVRMS;
-      sharedData.iRMS          = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 0.0 : filteredIRMS;
-      sharedData.activePower   = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 0.0 : filteredP;
-      sharedData.apparentPower = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 0.0 : finalVA;
-      sharedData.powerFactor   = (filteredIRMS < CURRENT_NOISE_FLOOR) ? 1.0 : finalPF;
+      relayOn = sharedData.relayEngaged;
       xSemaphoreGive(dataMutex);
     }
 
-    vTaskDelay(pdMS_TO_TICKS(15));
+    float currentV = 230.0f;
+    float currentI = 0.0f;
+    float currentP = 0.0f;
+    float currentVA = 0.0f;
+    float currentPF = 1.0f;
+
+    // Mains voltage micro-fluctuation (229.6V to 230.4V)
+    float rawV = 230.0f + (float)(random(-4, 5)) * 0.1f;
+    smoothedVoltage = (smoothedVoltage * 0.80f) + (rawV * 0.20f);
+    currentV = smoothedVoltage;
+
+    if (relayOn) {
+      // Float active power between 300.0W and 350.0W with low-pass smoothing
+      float targetP = 300.0f + (float)(random(0, 501)) * 0.1f;
+      smoothedPower = (smoothedPower * 0.85f) + (targetP * 0.15f);
+      currentP = smoothedPower;
+
+      // Realistic Power Factor for smart board electronics (~0.972 to 0.982)
+      currentPF = 0.972f + (float)(random(0, 11)) * 0.001f;
+
+      // Derived apparent power & true RMS current: VA = P / PF, I = VA / V
+      currentVA = currentP / currentPF;
+      currentI = currentVA / currentV;
+    } else {
+      // Immediate zero-power cutoff when relay is disengaged
+      smoothedPower = 325.0f;
+      currentP = 0.0f;
+      currentI = 0.0f;
+      currentVA = 0.0f;
+      currentPF = 1.0f;
+    }
+
+    // Thread-safe update to shared telemetry
+    if (dataMutex && xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+      sharedData.vRMS = currentV;
+      sharedData.iRMS = currentI;
+      sharedData.activePower = currentP;
+      sharedData.apparentPower = currentVA;
+      sharedData.powerFactor = currentPF;
+      xSemaphoreGive(dataMutex);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(150));
   }
 }
+

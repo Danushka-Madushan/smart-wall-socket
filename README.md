@@ -27,8 +27,8 @@ The project provides two production firmware nodes tailored for different hardwa
 
 | Hardware Node | Primary Purpose | Key Features | Firmware Guide |
 |---|---|---|---|
-| **ESP-32S Node** | High-Precision Smart Wall Socket | True-RMS voltage & current sampling on FreeRTOS Core 1, single-relay inverted hardware logic, **Espressif Unified BLE Provisioning**, 128x64 OLED dashboard, NVS storage. | [ESP-32S README](firmware/esp-32S/README.md) |
-| **ESP-8266 Node** | 2-Channel Wireless Smart Switch | Controls two independent relay channels via C945 NPN transistors, Wi-Fi client auto-reconnect, 128x32 OLED, EEPROM with checksum integrity. | [ESP-8266 README](firmware/esp-8266/README.md) |
+| **ESP-32S Node** | High-Precision Smart Wall Socket | Real-time synthetic energy telemetry on FreeRTOS Core 1 (230V mains, 300-350W floating load, 0W cutoff), single-relay inverted hardware logic, Wi-Fi LAN mDNS ZeroConf (`relay-32s-node.local`), headless OLED display fallback, NVS storage. | [ESP-32S README](firmware/esp-32S/README.md) |
+| **ESP-8266 Node** | 2-Channel Wireless Smart Switch | Controls two independent relay channels via C945 NPN transistors, Wi-Fi client auto-reconnect, mDNS ZeroConf (`relay-8266-node.local`), 128x32 OLED, EEPROM with checksum integrity. | [ESP-8266 README](firmware/esp-8266/README.md) |
 
 ---
 
@@ -37,22 +37,23 @@ The project provides two production firmware nodes tailored for different hardwa
 ```
                           +------------------------------------------+
                           |        Android App (SocketMan)           |
-                          |  - mDNS ZeroConf Discovery               |
+                          |  - mDNS ZeroConf Discovery (FIFO Queue)  |
                           |  - Camera QR Code Scanner (PoP)          |
                           |  - Real-Time Energy Dashboard            |
                           +--------------------+---------------------+
                                                |
                      +-------------------------+-------------------------+
-                     | Wi-Fi (LAN / mDNS)                                | BLE / Wi-Fi
+                     | Wi-Fi LAN (Multicast DNS ZeroConf)                |
                      v                                                   v
 +------------------------------------------+    +------------------------------------------+
 |          ESP8266 Smart Switch            |    |          ESP-32S Smart Socket            |
+|       (relay-8266-node.local)            |    |         (relay-32s-node.local)           |
 |                                          |    |                                          |
 |  - 2 Relay Channels (GPIO 12, GPIO 14)   |    |  - 1 Relay Channel (GPIO 4 Inverted)     |
-|  - 128x32 OLED Display                   |    |  - ADS1115 16-Bit ADC (Core 1 FreeRTOS)  |
-|  - Wi-Fi Station Mode                    |    |  - SCT-013 (Current) + ZMPT101B (Voltage)|
-|  - EEPROM Storage (Checksummed)          |    |  - Espressif BLE Provisioning (WiFiProv) |
-|  - PoP Pairing (NODE_SEC_4102)           |    |  - 128x64 OLED Display (Dual-Mode)       |
+|  - 128x32 OLED Display                   |    |  - Core 1 Synthetic Telemetry Generator  |
+|  - Wi-Fi Station Mode (Auto-Reconnect)   |    |    (230V Mains, 300-350W Floating, 0W)   |
+|  - EEPROM Storage (Checksummed)          |    |  - Wi-Fi Station Mode (PoP: S3_SEC_9821) |
+|  - PoP Pairing (NODE_SEC_4102)           |    |  - Headless OLED Display Handling        |
 +------------------------------------------+    +------------------------------------------+
 ```
 
@@ -66,8 +67,8 @@ smart-wall-socket/
 │   ├── app/
 │   │   └── src/main/java/nibm/iot/socketman/
 │   │       ├── MainActivity.kt
-│   │       ├── network/              # REST & BLE Clients (SmartSwitchApiClient, BleProvisioningManager)
-│   │       ├── ui/screens/           # Jetpack Compose UI (Home, Hub, BLE Prov, PoP Claim, Energy & Control)
+│   │       ├── network/              # REST & mDNS (SmartSwitchApiClient, MdnsDiscoveryManager)
+│   │       ├── ui/screens/           # Jetpack Compose UI (Home, Hub, PoP Claim, Energy & Control)
 │   │       └── viewmodel/            # MdnsSwitchViewModel & State Architecture
 │   ├── build.gradle.kts
 │   └── settings.gradle.kts
@@ -115,7 +116,7 @@ To optimize optical recognition on small physical stickers, the ecosystem uses a
 
 | Node | QR String to Print | Character Count | QR Symbol Matrix |
 |---|---|---|---|
-| **ESP-32S** | `v1;PROV_A1B2C3;S3_SEC_9821;ble` | **29 chars** | Version 2 (25×25) |
+| **ESP-32S** | `v1;RELAY_32S_NODE;S3_SEC_9821;lan` | **34 chars** | Version 2 (25×25) |
 | **ESP-8266** | `v1;RELAY_8266_NODE;NODE_SEC_4102;lan` | **34 chars** | Version 2 (25×25) |
 
 > **Optical Advantage:** Reducing payload size from verbose JSON (~75 chars) down to ~30 chars cuts module density by **58%**, making individual dots physically larger on stickers for instantaneous camera recognition.
@@ -186,7 +187,7 @@ pio device monitor --baud 115200
 
 - [ESP-32S Technical Manual](firmware/esp-32S/README.md)
 - [ESP-8266 Technical Manual](firmware/esp-8266/README.md)
-- [ESP-32S BLE Provisioning Guide](firmware/esp-32S/how-to.md)
+- [Web PoP QR Generator Guide](pop-gen/README.md)
 - [Hardware Circuit Schematic](docs/IoT%20-%20Curcuit%20Design.pdf)
 - [Project Presentation](docs/IoT%20SMART%20Wall%20Socket.pdf)
 

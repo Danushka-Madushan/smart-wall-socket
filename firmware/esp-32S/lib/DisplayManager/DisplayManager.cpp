@@ -13,17 +13,8 @@ unsigned long DisplayManager::toastDuration = 0;
 unsigned long DisplayManager::lastUpdateTick = 0;
 
 void DisplayManager::init() {
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(400000); // 400kHz Fast I2C
-
-  if (display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR)) {
-    hasDisplay = true;
-    display.clearDisplay();
-    display.display();
-  } else {
-    hasDisplay = false;
-    Serial.println(F("[DISPLAY] Notice: OLED not detected at 0x3C. Operating in headless mode."));
-  }
+  hasDisplay = false;
+  Serial.println(F("[DISPLAY] Headless mode: OLED disabled due to hardware bus fault."));
 }
 
 void DisplayManager::showSplash() {

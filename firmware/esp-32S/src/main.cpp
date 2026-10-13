@@ -28,17 +28,17 @@ void setup() {
   // 3. Initialize Persistent NVS Storage & Check Quick Power-Cycle Reset
   StorageManager::init();
   if (StorageManager::isQuickPowerCycleResetTriggered()) {
-    Serial.println(F("[RESET] 3 quick power-cycles detected! Factory resetting to BLE pairing mode..."));
+    Serial.println(F("[RESET] 3 quick power-cycles detected! Factory resetting to unclaimed state..."));
     StorageManager::reset();
     NetworkManager::resetProvisioning();
   }
 
-  // 4. Initialize Core 1 Power Sampling (ADS1115 True-RMS Task)
+  // 4. Initialize Core 1 Power Sampling (Synthetic Real Power Engine)
   if (!PowerMonitor::init()) {
-    Serial.println(F("[WARNING] ADS1115 power monitor failed to initialize!"));
+    Serial.println(F("[WARNING] Power monitor failed to initialize!"));
   }
 
-  // 5. Initialize Network Subsystem (WiFiProv over BLE with PoP)
+  // 5. Initialize Network Subsystem (LAN Wi-Fi with mDNS)
   NetworkManager::init();
 
   // 6. Initialize Web Server & REST API Routes
@@ -60,7 +60,7 @@ void loop() {
   // 2. Monitor Wi-Fi state & update mDNS services
   NetworkManager::update();
 
-  // 3. Refresh OLED display (telemetry or BLE provisioning state)
+  // 3. Refresh display / headless upkeep
   static unsigned long lastDisplayTick = 0;
   if (millis() - lastDisplayTick >= 250) {
     lastDisplayTick = millis();

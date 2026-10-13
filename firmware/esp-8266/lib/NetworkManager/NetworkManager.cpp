@@ -16,16 +16,20 @@ void NetworkManager::onMDNSDynamicServiceTxt(const MDNSResponder::hMDNSService h
 
 void NetworkManager::setupMDNS()
 {
-  if (MDNS.begin("smartsocket"))
+  String host = String(DEVICE_ID);
+  host.toLowerCase();
+  host.replace('_', '-');
+
+  if (MDNS.begin(host.c_str()))
   {
-    MDNS.addService("http", "tcp", 80);
+    MDNS.addService(DEVICE_ID, "http", "tcp", 80);
     MDNS.setDynamicServiceTxtCallback(onMDNSDynamicServiceTxt);
     MDNS.announce();
-    Serial.println(F("mDNS started: smartsocket.local"));
+    Serial.printf("[mDNS] Started: %s.local (Service: %s)\n", host.c_str(), DEVICE_ID);
   }
   else
   {
-    Serial.println(F("Error starting mDNS responder."));
+    Serial.println(F("[mDNS] Error starting mDNS responder."));
   }
 }
 

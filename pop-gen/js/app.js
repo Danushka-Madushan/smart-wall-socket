@@ -11,12 +11,12 @@
     esp32s: {
       id: 'RELAY_32S_NODE',
       pop: 'S3_SEC_9821',
-      transport: 'ble',
-      tag: 'ESP32-S Smart Socket',
+      transport: 'lan',
+      tag: 'ESP32-S Energy Socket',
       format: 'compact'
     },
     esp8266: {
-      id: 'ESP_SWITCH_2CH',
+      id: 'RELAY_8266_NODE',
       pop: 'NODE_SEC_4102',
       transport: 'lan',
       tag: 'ESP8266 2-Ch Switch',
@@ -25,7 +25,7 @@
     custom: {
       id: 'SMART_SOCKET_01',
       pop: 'SEC_8492',
-      transport: 'ble',
+      transport: 'lan',
       tag: 'Custom Device',
       format: 'compact'
     }

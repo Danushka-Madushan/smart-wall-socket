@@ -9,6 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +19,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import nibm.iot.socketman.data.*
-import nibm.iot.socketman.network.BleProvisioningManager
 import nibm.iot.socketman.network.MdnsDiscoveryManager
 import nibm.iot.socketman.network.SmartSwitchApiClient
 import java.security.SecureRandom
@@ -27,7 +28,6 @@ import kotlin.time.Duration.Companion.seconds
 class MdnsSwitchViewModel(context: Context) : ViewModel() {
     private val storage = DeviceStorage(context)
     private val discoveryManager = MdnsDiscoveryManager(context)
-    private val bleManager = BleProvisioningManager(context)
     private val apiClient = SmartSwitchApiClient()
 
     private val _savedDevices = MutableStateFlow<List<SavedDevice>>(emptyList())
@@ -35,9 +35,6 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
 
     val discoveredDevices: StateFlow<List<MdnsDevice>> = discoveryManager.devices
     val isDiscovering: StateFlow<Boolean> = discoveryManager.isDiscovering
-
-    val bleDiscoveredDevices: StateFlow<List<BleDiscoveredDevice>> = bleManager.discoveredBleDevices
-    val isBleScanning: StateFlow<Boolean> = bleManager.isScanning
 
     var deviceOnlineMap by mutableStateOf<Map<String, Boolean>>(emptyMap())
         private set
@@ -70,9 +67,6 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         private set
 
     var claimErrorMessage by mutableStateOf<String?>(null)
-        private set
-
-    var provisioningStatusText by mutableStateOf<String?>(null)
         private set
 
     var pendingReclaimInfo by mutableStateOf<PendingClaimInfo?>(null)
@@ -117,14 +111,6 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
 
     fun stopDiscovery() {
         discoveryManager.stopDiscovery()
-    }
-
-    fun startBleScan() {
-        bleManager.startBleScan()
-    }
-
-    fun stopBleScan() {
-        bleManager.stopBleScan()
     }
 
     fun generateMasterToken(): String {
@@ -255,68 +241,6 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         }
     }
 
-    fun provisionAndClaimBleDevice(
-        deviceName: String,
-        popPin: String,
-        ssid: String,
-        pass: String,
-        targetIpOverride: String? = null,
-        onResult: (Boolean, String) -> Unit
-    ) {
-        provisioningStatusText = "Connecting over BLE..."
-        bleManager.provisionDeviceOverBle(
-            deviceName = deviceName,
-            popPin = popPin,
-            ssid = ssid,
-            pass = pass,
-            targetIpOverride = targetIpOverride,
-            scope = viewModelScope,
-            onStatusUpdate = { status ->
-                provisioningStatusText = status
-            },
-            onComplete = { success, assignedIp, errorMsg ->
-                if (success && assignedIp != null) {
-                    val finalIp = targetIpOverride?.ifBlank { null }
-                        ?: discoveredDevices.value.find {
-                            it.id.equals(deviceName, ignoreCase = true) || it.name.contains("smartsocket", ignoreCase = true)
-                        }?.ip ?: assignedIp
-
-                    provisioningStatusText = "BLE Provisioned! Executing PoP Claim..."
-                    claimDevice(
-                        ip = finalIp,
-                        pop = popPin,
-                        targetDeviceId = deviceName,
-                        switches = 1,
-                        hasEnergy = true,
-                        transport = "ble"
-                    ) { claimOk, claimMsg ->
-                        if (!claimOk && pendingReclaimInfo != null) {
-                            // If socket was already claimed in previous NVS session, auto reset & reclaim using the validated BLE PoP PIN
-                            provisioningStatusText = "Resetting previous session & claiming..."
-                            forceReclaimDevice(
-                                ip = finalIp,
-                                pop = popPin,
-                                targetDeviceId = deviceName,
-                                switches = 1,
-                                hasEnergy = true,
-                                transport = "ble"
-                            ) { reclaimOk, reclaimMsg ->
-                                provisioningStatusText = null
-                                onResult(reclaimOk, reclaimMsg)
-                            }
-                        } else {
-                            provisioningStatusText = null
-                            onResult(claimOk, claimMsg)
-                        }
-                    }
-                } else {
-                    provisioningStatusText = null
-                    onResult(false, errorMsg ?: "Provisioning failed")
-                }
-            }
-        )
-    }
-
     fun selectDeviceForControl(device: SavedDevice) {
         selectedSavedDevice = device
         val cachedRelays = deviceRelayMap[device.id] ?: emptyMap()
@@ -409,18 +333,15 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
         heartbeatJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 val devices = _savedDevices.value
-                val newOnlineMap = mutableMapOf<String, Boolean>()
-                val newRelayMap = mutableMapOf<String, Map<String, Boolean>>()
-
-                for (device in devices) {
-                    val hb = apiClient.getHeartbeat(device.ip)
-                    if (hb != null && hb.ack) {
-                        newOnlineMap[device.id] = true
-                        newRelayMap[device.id] = hb.relays
-                    } else {
-                        newOnlineMap[device.id] = false
+                val results = devices.map { device ->
+                    async {
+                        val hb = apiClient.getHeartbeat(device.ip)
+                        Triple(device.id, hb != null && hb.ack, hb?.relays ?: emptyMap())
                     }
-                }
+                }.awaitAll()
+
+                val newOnlineMap = results.associate { it.first to it.second }
+                val newRelayMap = results.associate { it.first to it.third }
 
                 withContext(Dispatchers.Main) {
                     deviceOnlineMap = newOnlineMap
@@ -465,7 +386,6 @@ class MdnsSwitchViewModel(context: Context) : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         discoveryManager.stopDiscovery()
-        bleManager.stopBleScan()
         heartbeatJob?.cancel()
         detailPollingJob?.cancel()
     }

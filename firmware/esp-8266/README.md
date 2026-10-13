@@ -90,7 +90,7 @@ firmware/esp-8266/
 | **Storage** | `lib/Storage/` | Private library managing non-volatile EEPROM (512B), validating checksums, persisting `master_token`, and handling factory reset. |
 | **RelayController** | `lib/RelayController/` | Private library controlling physical relays on `D5` (GPIO14) and `D6` (GPIO12). Suppresses floating boot glitches (`digitalWrite(LOW)` before `pinMode(OUTPUT)`). |
 | **DisplayManager** | `lib/DisplayManager/` | Private library managing 128x32 OLED UI, dynamic splash centering, 1500µs clock-stretch limit protection, and headless mode fallback. |
-| **NetworkManager** | `lib/NetworkManager/` | Private library connecting to `ESP GATE`, running background auto-reconnect, and publishing `smartsocket.local` with dynamic TXT records. |
+| **NetworkManager** | `lib/NetworkManager/` | Private library connecting to `ESP GATE`, running background auto-reconnect, and publishing `relay-8266-node.local` with dynamic TXT records. |
 | **ApiServer** | `lib/ApiServer/` | Private library handling 11 REST API routes, universal CORS headers (`OPTIONS` -> `204`), 1KB payload gate, and PoP Bearer token verification. |
 | **Main** | `src/main.cpp` | Application entry point initializing all subsystems in order and dispatching events in `loop()`. |
 
@@ -238,8 +238,8 @@ stateDiagram-v2
 
 The device runs an mDNS responder that allows mobile apps to locate it on the local area network without needing to guess its DHCP IP address.
 
-* **Hostname**: `smartsocket.local`
-* **Service**: `_http._tcp` on Port `80`
+* **Hostname**: `relay-8266-node.local`
+* **Service**: `_http._tcp` on Port `80` (Instance: `RELAY_8266_NODE`)
 
 ### Dynamic TXT Records
 Clients querying the `_http._tcp` service receive DNS-SD TXT key-value pairs describing device capabilities:
@@ -293,7 +293,7 @@ The 0.91-inch OLED screen provides real-time diagnostics:
 
 ### Base URL
 ```
-http://smartsocket.local
+http://relay-8266-node.local
 # or
 http://<DEVICE_IP>
 ```
@@ -556,11 +556,11 @@ Reverts the device to factory `UNCLAIMED` state. Clears `master_token` from EEPR
 
 ## Step-by-Step Usage & Testing Guide (cURL)
 
-Replace `smartsocket.local` with the actual IP address shown on the OLED display if mDNS resolution is unavailable on your test client.
+Replace `relay-8266-node.local` with the actual IP address shown on the OLED display if mDNS resolution is unavailable on your test client.
 
 ### Step 1: Check Device Discovery & Info
 ```bash
-curl http://smartsocket.local/api/info
+curl http://relay-8266-node.local/api/info
 ```
 *Expected: `claimed: false`, `switches: 2`, `energy_monitoring: false`.*
 
@@ -568,7 +568,7 @@ curl http://smartsocket.local/api/info
 
 ### Step 2: Attempt Unauthorized Relay Control (Verify Security Lock)
 ```bash
-curl -X POST http://smartsocket.local/api/relay \
+curl -X POST http://relay-8266-node.local/api/relay \
   -H "Content-Type: application/json" \
   -d '{"relay": 1, "state": true}'
 ```
@@ -578,7 +578,7 @@ curl -X POST http://smartsocket.local/api/relay \
 
 ### Step 3: Perform Proof of Possession (PoP) Claim Handshake
 ```bash
-curl -X POST http://smartsocket.local/api/claim \
+curl -X POST http://relay-8266-node.local/api/claim \
   -H "Content-Type: application/json" \
   -d '{
     "pop": "NODE_SEC_4102",
@@ -593,7 +593,7 @@ curl -X POST http://smartsocket.local/api/claim \
 
 ### Step 4: Verify Token Authentication
 ```bash
-curl http://smartsocket.local/api/verify \
+curl http://relay-8266-node.local/api/verify \
   -H "Authorization: Bearer MY_SECRET_APP_TOKEN_99"
 ```
 *Expected: `200 OK` with `{"verified":true,"id":"RELAY_8266_NODE"}`.*
@@ -602,7 +602,7 @@ curl http://smartsocket.local/api/verify \
 
 ### Step 5: Turn ON Relay 1 (Switch 1)
 ```bash
-curl -X POST http://smartsocket.local/api/relay \
+curl -X POST http://relay-8266-node.local/api/relay \
   -H "Authorization: Bearer MY_SECRET_APP_TOKEN_99" \
   -H "Content-Type: application/json" \
   -d '{"relay": 1, "state": true}'
@@ -613,7 +613,7 @@ curl -X POST http://smartsocket.local/api/relay \
 
 ### Step 6: Turn Both Relays ON Simultaneously
 ```bash
-curl -X POST http://smartsocket.local/api/relay \
+curl -X POST http://relay-8266-node.local/api/relay \
   -H "Authorization: Bearer MY_SECRET_APP_TOKEN_99" \
   -H "Content-Type: application/json" \
   -d '{"relay": "all", "state": true}'
@@ -624,7 +624,7 @@ curl -X POST http://smartsocket.local/api/relay \
 
 ### Step 7: Turn Both Relays OFF
 ```bash
-curl -X POST http://smartsocket.local/api/relay/all \
+curl -X POST http://relay-8266-node.local/api/relay/all \
   -H "Authorization: Bearer MY_SECRET_APP_TOKEN_99" \
   -H "Content-Type: application/json" \
   -d '{"state": false}'
@@ -635,7 +635,7 @@ curl -X POST http://smartsocket.local/api/relay/all \
 
 ### Step 8: Factory Reset (Unclaim)
 ```bash
-curl -X POST http://smartsocket.local/api/unclaim \
+curl -X POST http://relay-8266-node.local/api/unclaim \
   -H "Authorization: Bearer MY_SECRET_APP_TOKEN_99"
 ```
 *Expected:*
